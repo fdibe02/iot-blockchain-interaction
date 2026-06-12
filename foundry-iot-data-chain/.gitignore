@@ -18,3 +18,11 @@ docs/
 .env
 .env.*
 !.env.example
+
+# Foundry generated files
+cache/
+out/
+broadcast/
+
+# Coverage
+coverage/

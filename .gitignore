@@ -13,12 +13,3 @@
 node_modules/
 dist/
 build/
-
-# Foundry generated files
-foundry-iot-data-chain/cache/
-foundry-iot-data-chain/out/
-foundry-iot-data-chain/broadcast/
-
-# Coverage
-coverage/
-foundry-iot-data-chain/coverage/
