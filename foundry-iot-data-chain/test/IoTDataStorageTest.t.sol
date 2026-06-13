@@ -1,4 +1,4 @@
-// SPDX-License-identifier: MIT
+// SPDX-License-Identifier: MIT
 
 pragma solidity ^0.8.19;
 
@@ -46,7 +46,7 @@ contract IoTDataStorageTest is Test {
         iotDataStorage.registerDevice(device, METADATA_URI);
     }
 
-    function testcannotRegisterSameDeviceTwice() public {
+    function testCannotRegisterSameDeviceTwice() public {
         vm.prank(owner);
         iotDataStorage.registerDevice(device, METADATA_URI);
 
@@ -70,7 +70,7 @@ contract IoTDataStorageTest is Test {
         assertGt(measurement.timestamp, 0);
     }
 
-    function UnregisteredDeviceCannotRecordMeasurement() public {
+    function testUnregisteredDeviceCannotRecordMeasurement() public {
         vm.prank(device);
 
         vm.expectRevert(IoTDataStorage.IoTDataStorage__DeviceNotRegistered.selector);
