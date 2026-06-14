@@ -105,10 +105,13 @@ contract IoTDataStorageTest is Test {
         vm.prank(owner);
         iotDataStorage.registerDevice(device, METADATA_URI);
 
+        uint256 timestamp = 123;
+        vm.warp(timestamp);
+
         vm.prank(device);
 
-        vm.expectEmit(true, false, false, false);
-        emit MeasurementRecorded(device, MEASUREMENT_VALUE, block.timestamp);
+        vm.expectEmit(true, false, false, true, address(iotDataStorage)); // controllo device, value e timestamp, e indirizzo contratto che emette l'evento
+        emit MeasurementRecorded(device, MEASUREMENT_VALUE, timestamp);
 
         iotDataStorage.recordMeasurement(MEASUREMENT_VALUE);
     }
