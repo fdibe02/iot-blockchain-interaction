@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>IoT Data Chain - Dashboard</title>
+
+    <link rel="stylesheet" href="./css/style.css" />
+
+    <!-- Libreria esterna ethers.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.15.0/ethers.umd.min.js" defer></script>
+
+    <script src="./js/constants.js" defer></script>
+    <script src="./js/app.js" defer></script>
+</head>
+
+<body>
+    <main>
+        <h1>IoT Data Chain</h1>
+
+        <p class="subtitle">
+            Dashboard web3 per leggere dispositivi e misurazioni salvate su blockchain.
+        </p>
+
+        <section>
+            <h2>Connessione Wallet</h2>
+
+            <button id="connectButton">Connetti MetaMask</button>
+
+            <div class="output">
+                <p>
+                    Stato:
+                    <span id="connectionStatus" class="status">Non connesso</span>
+                </p>
+
+                <p>
+                    Account:
+                    <span id="connectedAccount">-</span>
+                </p>
+            </div>
+        </section>
+
+        <section>
+            <h2>Informazioni contratto</h2>
+
+            <button id="getOwnerButton">Leggi owner</button>
+
+            <div class="output">
+                <p>
+                    Owner:
+                    <span id="ownerAddress">-</span>
+                </p>
+            </div>
+        </section>
+
+        <section>
+            <h2>Ricerca dispositivo</h2>
+
+            <label for="deviceAddressInput">Address dispositivo</label>
+
+            <input id="deviceAddressInput" type="text" placeholder="0x..." />
+
+            <button id="getDeviceButton">Leggi dispositivo</button>
+            <button id="getLatestMeasurementButton">Leggi ultima misurazione</button>
+
+            <div class="output">
+                <h3>Dati dispositivo</h3>
+
+                <p>
+                    Registrato:
+                    <span id="deviceRegistered">-</span>
+                </p>
+
+                <p>
+                    Metadata URI:
+                    <span id="deviceMetadata">-</span>
+                </p>
+
+                <p>
+                    Registrato il:
+                    <span id="deviceRegisteredAt">-</span>
+                </p>
+            </div>
+
+            <div class="output">
+                <h3>Ultima misurazione</h3>
+
+                <p>
+                    Valore:
+                    <span id="latestMeasurementValue">-</span>
+                </p>
+
+                <p>
+                    Timestamp:
+                    <span id="latestMeasurementTimestamp">-</span>
+                </p>
+            </div>
+        </section>
+    </main>
+</body>
+
+</html>
