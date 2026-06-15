@@ -1,0 +1,7 @@
+{
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/esp32/compile_commands.json",
+    "C_Cpp.default.configurationProvider": "",
+    "files.associations": {
+        "*.ino": "cpp"
+    }
+}
