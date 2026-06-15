@@ -65,6 +65,92 @@ function showOwnerError(error) {
         "Errore durante la lettura dell'owner";
 }
 
+function getDevice() {
+    if (contract === undefined) {
+        document.getElementById("deviceRegistered").innerHTML =
+            "Connetti prima MetaMask";
+        return;
+    }
+
+    var deviceAddress = document.getElementById("deviceAddressInput").value;
+
+    if (deviceAddress === "") {
+        document.getElementById("deviceRegistered").innerHTML =
+            "Inserisci un address";
+        return;
+    }
+
+    contract
+        .getDevice(deviceAddress)
+        .then(showDevice)
+        .catch(showDeviceError);
+}
+
+function showDevice(device) {
+    var registered = device[0];
+    var metadataURI = device[1];
+    var registeredAt = Number(device[2]);
+
+    document.getElementById("deviceRegistered").innerHTML = registered;
+    document.getElementById("deviceMetadata").innerHTML = metadataURI;
+
+    if (registeredAt === 0) {
+        document.getElementById("deviceRegisteredAt").innerHTML = "-";
+    } else {
+        document.getElementById("deviceRegisteredAt").innerHTML =
+            new Date(registeredAt * 1000).toLocaleString("it-IT");
+    }
+}
+
+function showDeviceError(error) {
+    console.log(error);
+
+    document.getElementById("deviceRegistered").innerHTML =
+        "Errore durante la lettura del dispositivo";
+}
+
+function getLatestMeasurement() {
+    if (contract === undefined) {
+        document.getElementById("latestMeasurementValue").innerHTML =
+            "Connetti prima MetaMask";
+        return;
+    }
+
+    var deviceAddress = document.getElementById("deviceAddressInput").value;
+
+    if (deviceAddress === "") {
+        document.getElementById("latestMeasurementValue").innerHTML =
+            "Inserisci un address";
+        return;
+    }
+
+    contract
+        .getLatestMeasurement(deviceAddress)
+        .then(showLatestMeasurement)
+        .catch(showLatestMeasurementError);
+}
+
+function showLatestMeasurement(measurement) {
+    var value = measurement[0].toString();
+    var timestamp = Number(measurement[1]);
+
+    document.getElementById("latestMeasurementValue").innerHTML = value;
+
+    if (timestamp === 0) {
+        document.getElementById("latestMeasurementTimestamp").innerHTML = "-";
+    } else {
+        document.getElementById("latestMeasurementTimestamp").innerHTML =
+            new Date(timestamp * 1000).toLocaleString("it-IT");
+    }
+}
+
+function showLatestMeasurementError(error) {
+    console.log(error);
+
+    document.getElementById("latestMeasurementValue").innerHTML =
+        "Errore durante la lettura della misurazione";
+}
+
 
 
 document
@@ -75,6 +161,13 @@ document
     .getElementById("getOwnerButton")
     .addEventListener("click", getOwner);
 
+document
+    .getElementById("getDeviceButton")
+    .addEventListener("click", getDevice);
+
+document
+    .getElementById("getLatestMeasurementButton")
+    .addEventListener("click", getLatestMeasurement);
 
 
 
