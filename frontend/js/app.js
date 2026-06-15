@@ -10,7 +10,8 @@ function connectWallet() {
 
     provider = new ethers.BrowserProvider(window.ethereum);
 
-    provider.send("eth_requestAccounts", [])
+    provider
+        .send("eth_requestAccounts", [])
         .then(getSelectedSigner)
         .then(saveSignerAndGetAddress)
         .then(showConnectedAccount)
@@ -22,7 +23,7 @@ function getSelectedSigner() {
 }
 
 function saveSignerAndGetAddress(selectedSigner) {
-    singer = selectedSigner;
+    signer = selectedSigner;
 
     return signer.getAddress();
 }
@@ -40,9 +41,39 @@ function showConnectionError(error) {
     document.getElementById("connectionStatus").innerHTML = "Errore durante la connessione";
 }
 
+function getOwner() {
+    if (contract === undefined) {
+        document.getElementById("ownerAddress").innerHTML =
+            "Connetti prima MetaMask";
+        return;
+    }
+
+    contract
+        .getOwner()
+        .then(showOwner)
+        .catch(showOwnerError);
+}
+
+function showOwner(owner) {
+    document.getElementById("ownerAddress").innerHTML = owner;
+}
+
+function showOwnerError(error) {
+    console.log(error);
+
+    document.getElementById("ownerAddress").innerHTML =
+        "Errore durante la lettura dell'owner";
+}
+
+
+
 document
     .getElementById("connectButton")
     .addEventListener("click", connectWallet);
+
+document
+    .getElementById("getOwnerButton")
+    .addEventListener("click", getOwner);
 
 
 
