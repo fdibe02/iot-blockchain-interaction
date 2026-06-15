@@ -1,7 +1,25 @@
 {
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/esp32/compile_commands.json",
-    "C_Cpp.default.configurationProvider": "",
     "files.associations": {
         "*.ino": "cpp"
-    }
+    },
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/firmware/esp32-iot-data-chain",
+        "/Users/francescodibella/Library/Arduino15/packages/esp32/hardware/esp32/3.3.10/cores/esp32",
+        "/Users/francescodibella/Library/Arduino15/packages/esp32/hardware/esp32/3.3.10/variants/esp32",
+        "/Users/francescodibella/Library/Arduino15/packages/esp32/hardware/esp32/3.3.10/libraries/**"
+    ],
+    "C_Cpp.default.browse.path": [
+        "${workspaceFolder}/firmware/esp32-iot-data-chain",
+        "/Users/francescodibella/Library/Arduino15/packages/esp32/hardware/esp32/3.3.10/cores/esp32",
+        "/Users/francescodibella/Library/Arduino15/packages/esp32/hardware/esp32/3.3.10/variants/esp32",
+        "/Users/francescodibella/Library/Arduino15/packages/esp32/hardware/esp32/3.3.10/libraries/**"
+    ],
+    "C_Cpp.default.defines": [
+        "ARDUINO=10819",
+        "ARDUINO_ARCH_ESP32",
+        "ESP32",
+        "ARDUINO_BOARD=\"ESP32_DEV\""
+    ],
+    "C_Cpp.default.cppStandard": "c++17",
+    "C_Cpp.default.intelliSenseMode": "macos-gcc-arm64"
 }
