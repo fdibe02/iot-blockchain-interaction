@@ -1,7 +1,4 @@
 {
-    "files.associations": {
-        "*.ino": "cpp"
-    },
     "C_Cpp.default.includePath": [
         "${workspaceFolder}/firmware/esp32-iot-data-chain",
         "/Users/francescodibella/Library/Arduino15/packages/esp32/hardware/esp32/3.3.10/cores/esp32",
