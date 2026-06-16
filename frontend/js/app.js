@@ -65,6 +65,59 @@ function showOwnerError(error) {
         "Errore durante la lettura dell'owner";
 }
 
+function registerDevice() {
+    if (contract === undefined) {
+        document.getElementById("registerDeviceStatus").innerHTML =
+            "Connetti prima MetaMask";
+        return;
+    }
+
+    var deviceAddress = document.getElementById("registerDeviceAddressInput").value;
+    var metadataURI = document.getElementById("registerDeviceMetadataInput").value;
+
+    if (deviceAddress === "") {
+        document.getElementById("registerDeviceStatus").innerHTML =
+            "Inserisci l'address del dispositivo";
+        return;
+    }
+
+    if (metadataURI === "") {
+        document.getElementById("registerDeviceStatus").innerHTML =
+            "Inserisci il metadata URI";
+        return;
+    }
+
+    document.getElementById("registerDeviceStatus").innerHTML =
+        "Transazione in attesa di conferma su MetaMask";
+
+    contract
+        .registerDevice(deviceAddress, metadataURI)
+        .then(waitRegisterDeviceTransaction)
+        .then(showRegisterDeviceSuccess)
+        .catch(showRegisterDeviceError);
+}
+
+function waitRegisterDeviceTransaction(transactionResponse) {
+    document.getElementById("registerDeviceStatus").innerHTML =
+        "Transazione inviata. Attendo conferma sulla blockchain...";
+
+    return transactionResponse.wait(1);
+}
+
+function showRegisterDeviceSuccess(receipt) {
+    console.log(receipt);
+
+    document.getElementById("registerDeviceStatus").innerHTML =
+        "Dispositivo registrato correttamente";
+}
+
+function showRegisterDeviceError(error) {
+    console.log(error);
+
+    document.getElementById("registerDeviceStatus").innerHTML =
+        "Errore durante la registrazione del dispositivo";
+}
+
 function getDevice() {
     if (contract === undefined) {
         document.getElementById("deviceRegistered").innerHTML =
@@ -152,10 +205,14 @@ function showLatestMeasurementError(error) {
 }
 
 
-
 document
     .getElementById("connectButton")
     .addEventListener("click", connectWallet);
+
+
+document
+    .getElementById("registerDeviceButton")
+    .addEventListener("click", registerDevice);
 
 document
     .getElementById("getOwnerButton")

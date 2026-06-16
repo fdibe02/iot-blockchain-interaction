@@ -13,7 +13,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.15.0/ethers.umd.min.js" defer></script>
 
     <script src="./js/constants.js" defer></script>
+    <script src="./js/contract-address.js" defer></script>
     <script src="./js/app.js" defer></script>
+
 </head>
 
 <body>
@@ -51,6 +53,25 @@
                 <p>
                     Owner:
                     <span id="ownerAddress">-</span>
+                </p>
+            </div>
+        </section>
+
+        <section>
+            <h2>Registrazione dispositivo</h2>
+
+            <label for="registerDeviceAddressInput">Address dispositivo</label>
+            <input id="registerDeviceAddressInput" type="text" placeholder="0x..." />
+
+            <label for="registerDeviceMetadataInput">Metadata URI</label>
+            <input id="registerDeviceMetadataInput" type="text" placeholder="esp32-laboratorio" />
+
+            <button id="registerDeviceButton">Registra dispositivo</button>
+
+            <div class="output">
+                <p>
+                    Stato registrazione:
+                    <span id="registerDeviceStatus">-</span>
                 </p>
             </div>
         </section>
