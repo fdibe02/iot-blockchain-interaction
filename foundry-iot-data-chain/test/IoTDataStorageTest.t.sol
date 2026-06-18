@@ -9,17 +9,30 @@ contract IoTDataStorageTest is Test {
     IoTDataStorage private iotDataStorage;
 
     address private owner = address(1);
-    address private device = address(2);
+    address private device;
     address private user = address(3);
+
+    uint256 private constant DEVICE_PRIVATE_KEY = 2;
+    uint256 private constant OTHER_PRIVATE_KEY = 3;
 
     string private constant METADATA_URI = "esp32-laboratorio";
     int256 private constant MEASUREMENT_VALUE = 25;
 
     event DeviceRegistered(address indexed deviceAddress, string metadataURI);
 
-    event MeasurementRecorded(address indexed deviceAddress, int256 value, uint256 timestamp);
+    event MeasurementRecorded(
+        address indexed deviceAddress,
+        address indexed relayer,
+        int256 value,
+        uint256 deviceTimestamp,
+        uint256 blockchainTimestamp,
+        uint256 nonce,
+        bytes32 dataHash
+    );
 
     function setUp() public {
+        device = vm.addr(DEVICE_PRIVATE_KEY);
+
         vm.prank(owner);
         iotDataStorage = new IoTDataStorage();
     }
@@ -32,7 +45,8 @@ contract IoTDataStorageTest is Test {
         vm.prank(owner);
         iotDataStorage.registerDevice(device, METADATA_URI);
 
-        IoTDataStorage.Device memory registeredDevice = iotDataStorage.getDevice(device);
+        IoTDataStorage.Device memory registeredDevice = iotDataStorage
+            .getDevice(device);
 
         assertEq(registeredDevice.isRegistered, true);
         assertEq(registeredDevice.metadataURI, METADATA_URI);
@@ -51,7 +65,9 @@ contract IoTDataStorageTest is Test {
         iotDataStorage.registerDevice(device, METADATA_URI);
 
         vm.prank(owner);
-        vm.expectRevert(IoTDataStorage.IoTDataStorage__DeviceAlreadyRegistered.selector);
+        vm.expectRevert(
+            IoTDataStorage.IoTDataStorage__DeviceAlreadyRegistered.selector
+        );
         iotDataStorage.registerDevice(device, METADATA_URI);
     }
 
@@ -59,37 +75,205 @@ contract IoTDataStorageTest is Test {
         vm.prank(owner);
         iotDataStorage.registerDevice(device, METADATA_URI);
 
-        vm.prank(device);
-        iotDataStorage.recordMeasurement(MEASUREMENT_VALUE);
+        uint256 deviceTimestamp = 1_700_000_000;
+        uint256 nonce = 1;
+
+        bytes memory signature = _signMeasurement(
+            DEVICE_PRIVATE_KEY,
+            device,
+            MEASUREMENT_VALUE,
+            deviceTimestamp,
+            nonce
+        );
+
+        vm.prank(user);
+        iotDataStorage.recordSignedMeasurement(
+            device,
+            MEASUREMENT_VALUE,
+            deviceTimestamp,
+            nonce,
+            signature
+        );
 
         uint256 measurementCount = iotDataStorage.getMeasurementCount(device);
-        IoTDataStorage.Measurement memory measurement = iotDataStorage.getMeasurement(device, 0);
+
+        IoTDataStorage.Measurement memory measurement = iotDataStorage
+            .getMeasurement(device, 0);
 
         assertEq(measurementCount, 1);
         assertEq(measurement.value, MEASUREMENT_VALUE);
-        assertGt(measurement.timestamp, 0);
+        assertEq(measurement.deviceTimestamp, deviceTimestamp);
+        assertGt(measurement.blockchainTimestamp, 0);
+        assertEq(measurement.nonce, nonce);
+        assertEq(
+            measurement.dataHash,
+            iotDataStorage.getMeasurementHash(
+                device,
+                MEASUREMENT_VALUE,
+                deviceTimestamp,
+                nonce
+            )
+        );
+        assertEq(iotDataStorage.getLastNonce(device), nonce);
     }
 
     function testUnregisteredDeviceCannotRecordMeasurement() public {
-        vm.prank(device);
+        vm.expectRevert(
+            IoTDataStorage.IoTDataStorage__DeviceNotRegistered.selector
+        );
 
-        vm.expectRevert(IoTDataStorage.IoTDataStorage__DeviceNotRegistered.selector);
-        iotDataStorage.recordMeasurement(MEASUREMENT_VALUE);
+        iotDataStorage.recordSignedMeasurement(
+            device,
+            MEASUREMENT_VALUE,
+            1_700_000_000,
+            1,
+            hex""
+        );
     }
 
     function testCanGetLatestMeasurement() public {
         vm.prank(owner);
         iotDataStorage.registerDevice(device, METADATA_URI);
 
-        vm.prank(device);
-        iotDataStorage.recordMeasurement(10);
+        uint256 firstTimestamp = 1_700_000_000;
+        uint256 secondTimestamp = 1_700_000_100;
 
-        vm.prank(device);
-        iotDataStorage.recordMeasurement(20);
+        bytes memory firstSignature = _signMeasurement(
+            DEVICE_PRIVATE_KEY,
+            device,
+            10,
+            firstTimestamp,
+            1
+        );
 
-        IoTDataStorage.Measurement memory latestMeasurement = iotDataStorage.getLatestMeasurement(device);
+        bytes memory secondSignature = _signMeasurement(
+            DEVICE_PRIVATE_KEY,
+            device,
+            20,
+            secondTimestamp,
+            2
+        );
+
+        iotDataStorage.recordSignedMeasurement(
+            device,
+            10,
+            firstTimestamp,
+            1,
+            firstSignature
+        );
+
+        iotDataStorage.recordSignedMeasurement(
+            device,
+            20,
+            secondTimestamp,
+            2,
+            secondSignature
+        );
+
+        IoTDataStorage.Measurement memory latestMeasurement = iotDataStorage
+            .getLatestMeasurement(device);
 
         assertEq(latestMeasurement.value, 20);
+        assertEq(latestMeasurement.nonce, 2);
+    }
+
+    // verifica che una furma firmata da un wallet diverso dal device venga rifiutata
+    function testCannotRecordMeasurementWithInvalidSignature() public {
+        vm.prank(owner);
+        iotDataStorage.registerDevice(device, METADATA_URI);
+
+        uint256 deviceTimestamp = 1_700_000_000;
+        uint256 nonce = 1;
+
+        bytes memory signature = _signMeasurement(
+            OTHER_PRIVATE_KEY,
+            device,
+            MEASUREMENT_VALUE,
+            deviceTimestamp,
+            nonce
+        );
+
+        vm.prank(user);
+        vm.expectRevert(
+            IoTDataStorage.IoTDataStorage__InvalidSignature.selector
+        );
+
+        iotDataStorage.recordSignedMeasurement(
+            device,
+            MEASUREMENT_VALUE,
+            deviceTimestamp,
+            nonce,
+            signature
+        );
+
+        assertEq(iotDataStorage.getMeasurementCount(device), 0);
+        assertEq(iotDataStorage.getLastNonce(device), 0);
+    }
+
+    // verifica protezione anti-replay: seconda misura deve fallire perchè il contratto accetta solo nonce maggiori dell'ultimo usato
+    function testCannotReuseNonce() public {
+        vm.prank(owner);
+        iotDataStorage.registerDevice(device, METADATA_URI);
+
+        uint256 deviceTimestamp = 1_700_000_000;
+        uint256 nonce = 1;
+
+        bytes memory signature = _signMeasurement(
+            DEVICE_PRIVATE_KEY,
+            device,
+            MEASUREMENT_VALUE,
+            deviceTimestamp,
+            nonce
+        );
+
+        vm.prank(user);
+        iotDataStorage.recordSignedMeasurement(
+            device,
+            MEASUREMENT_VALUE,
+            deviceTimestamp,
+            nonce,
+            signature
+        );
+
+        vm.prank(user);
+        vm.expectRevert(IoTDataStorage.IoTDataStorage__InvalidNonce.selector);
+
+        iotDataStorage.recordSignedMeasurement(
+            device,
+            MEASUREMENT_VALUE,
+            deviceTimestamp,
+            nonce,
+            signature
+        );
+
+        assertEq(iotDataStorage.getMeasurementCount(device), 1);
+        assertEq(iotDataStorage.getLastNonce(device), nonce);
+    }
+
+    function _signMeasurement(
+        uint256 privateKey,
+        address deviceAddress,
+        int256 value,
+        uint256 deviceTimestamp,
+        uint256 nonce
+    ) private view returns (bytes memory) {
+        bytes32 dataHash = iotDataStorage.getMeasurementHash(
+            deviceAddress,
+            value,
+            deviceTimestamp,
+            nonce
+        );
+
+        bytes32 ethSignedMessageHash = keccak256(
+            abi.encodePacked("\x19Ethereum Signed Message:\n32", dataHash)
+        );
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
+            privateKey,
+            ethSignedMessageHash
+        );
+
+        return abi.encodePacked(r, s, v);
     }
 
     function testRegisterDeviceEmitsEvent() public {
@@ -105,14 +289,46 @@ contract IoTDataStorageTest is Test {
         vm.prank(owner);
         iotDataStorage.registerDevice(device, METADATA_URI);
 
-        uint256 timestamp = 123;
-        vm.warp(timestamp);
+        uint256 blockchainTimestamp = 123;
+        uint256 deviceTimestamp = 1_700_000_000;
+        uint256 nonce = 1;
 
-        vm.prank(device);
+        vm.warp(blockchainTimestamp);
+
+        bytes32 dataHash = iotDataStorage.getMeasurementHash(
+            device,
+            MEASUREMENT_VALUE,
+            deviceTimestamp,
+            nonce
+        );
+
+        bytes memory signature = _signMeasurement(
+            DEVICE_PRIVATE_KEY,
+            device,
+            MEASUREMENT_VALUE,
+            deviceTimestamp,
+            nonce
+        );
 
         vm.expectEmit(true, false, false, true, address(iotDataStorage)); // controllo device, value e timestamp, e indirizzo contratto che emette l'evento
-        emit MeasurementRecorded(device, MEASUREMENT_VALUE, timestamp);
+        emit MeasurementRecorded(
+            device,
+            user,
+            MEASUREMENT_VALUE,
+            deviceTimestamp,
+            blockchainTimestamp,
+            nonce,
+            dataHash
+        );
 
-        iotDataStorage.recordMeasurement(MEASUREMENT_VALUE);
+        vm.prank(user);
+
+        iotDataStorage.recordSignedMeasurement(
+            device,
+            MEASUREMENT_VALUE,
+            deviceTimestamp,
+            nonce,
+            signature
+        );
     }
 }

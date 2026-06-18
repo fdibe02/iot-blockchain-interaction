@@ -1,0 +1,3 @@
+[submodule "foundry-iot-data-chain/lib/openzeppelin-contracts"]
+	path = foundry-iot-data-chain/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts

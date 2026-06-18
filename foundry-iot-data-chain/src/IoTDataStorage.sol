@@ -2,11 +2,17 @@
 
 pragma solidity ^0.8.19;
 
+import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
+
 contract IoTDataStorage {
+    using ECDSA for bytes32;
+
     error IoTDataStorage__NotOwner();
     error IoTDataStorage__DeviceAlreadyRegistered();
     error IoTDataStorage__DeviceNotRegistered();
     error IoTDataStorage__NoMeasurements();
+    error IoTDataStorage__InvalidSignature(); // firma falsa o fatta da un altro wallet
+    error IoTDataStorage__InvalidNonce(); // nonce già usato
 
     struct Device {
         //rappresenta un dispositivo IoT
@@ -17,8 +23,11 @@ contract IoTDataStorage {
 
     struct Measurement {
         //rappresenta una misurazione
-        int256 value; // non uint perchè potrebbe essere anche negativa
-        uint256 timestamp; //anche qui block.timestamp
+        int256 value; // dato misurato
+        uint256 deviceTimestamp; // timestamp genrato dal dispositivo
+        uint256 blockchainTimestamp; // quando ralayer ha scritto in blockchain
+        uint256 nonce; // numero progressivo anti replay
+        bytes32 dataHash; // hash esatto dei dati firmati
     }
 
     address private immutable i_owner;
@@ -29,11 +38,21 @@ contract IoTDataStorage {
     // Mapping delle misurazioni
     mapping(address deviceAddress => Measurement[] measurements) private s_measurements;
 
-    // con indexed posso filtrare gli event per qulla variabile
+    mapping(address deviceAddress => uint256 lastNonce) private s_lastNonce; // salva ultimo nonce accettato per ogni dispositivo
 
+    // con indexed posso filtrare gli event per qulla variabile
     event DeviceRegistered(address indexed deviceAddress, string metadataURI);
 
-    event MeasurementRecorded(address indexed deviceAddress, int256 value, uint256 timestamp);
+    event MeasurementRecorded(
+        address indexed deviceAddress,
+        address indexed relayer,
+        int256 value,
+        uint256 deviceTimestamp,
+        uint256 blockchainTimestamp,
+        uint256 nonce,
+        bytes32 dataHash
+    );
+    // relayer è msg.sender. Non è obbligatorio, ma è molto utile perché così sai chi ha pubblicato la misura.
 
     modifier onlyOwner() {
         if (msg.sender != i_owner) {
@@ -69,13 +88,41 @@ contract IoTDataStorage {
         emit DeviceRegistered(deviceAddress, metadataURI);
     }
 
-    function recordMeasurement(int256 value) external onlyRegisteredDevice(msg.sender) {
+    function recordSignedMeasurement(
+        address deviceAddress,
+        int256 value,
+        uint256 deviceTimestamp,
+        uint256 nonce,
+        bytes calldata signature
+    ) external onlyRegisteredDevice(deviceAddress) {
         // per ora mettiamo solo una valore nuemrico. poi potremmo aggiungere di verse grandezze misurate
+        if (nonce <= s_lastNonce[deviceAddress]) {
+            revert IoTDataStorage__InvalidNonce();
+        }
 
-        s_measurements[msg.sender].push(Measurement({value: value, timestamp: block.timestamp}));
+        bytes32 dataHash = getMeasurementHash(deviceAddress, value, deviceTimestamp, nonce);
 
-        emit MeasurementRecorded(msg.sender, value, block.timestamp);
+        address signer = dataHash.toEthSignedMessageHash().recover(signature);
+
+        if (signer != deviceAddress) {
+            revert IoTDataStorage__InvalidSignature();
+        }
+
+        s_lastNonce[deviceAddress] = nonce;
+
+        s_measurements[deviceAddress].push(
+            Measurement({
+                value: value,
+                deviceTimestamp: deviceTimestamp,
+                blockchainTimestamp: block.timestamp,
+                nonce: nonce,
+                dataHash: dataHash
+            })
+        );
+
+        emit MeasurementRecorded(deviceAddress, msg.sender, value, deviceTimestamp, block.timestamp, nonce, dataHash);
     }
+    // msg.sender identifica chi ha inviato la transazione
 
     // GETTERS
 
@@ -109,4 +156,20 @@ contract IoTDataStorage {
     function getOwner() external view returns (address) {
         return i_owner;
     }
+
+    function getMeasurementHash(address deviceAddress, int256 value, uint256 deviceTimestamp, uint256 nonce)
+        public
+        view
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(address(this), block.chainid, deviceAddress, value, deviceTimestamp, nonce));
+    }
+
+    function getLastNonce(address deviceAddress) external view returns (uint256) {
+        return s_lastNonce[deviceAddress];
+    }
+
+    // adddress(this) evita che stessa firma sia riutilizzabile su un altro contratto
+    // block.chainid per evitare che stessa firma sia riutilizzabile su un'altrta blockchain
+    // abi.encode piu sicuro contro collisioni tra tipi di dato diverso
 }
