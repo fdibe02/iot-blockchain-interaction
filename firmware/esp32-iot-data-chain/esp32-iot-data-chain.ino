@@ -13,18 +13,29 @@ const char* WIFI_PASSWORD = "PASSWORD_WIFI";
 // usa IP locale del Mac, tipo: http://192.168.1.50:3000/api/measurements
 const char* SERVER_URL = "http://192.168.1.50:3000/api/measurements";
 
-// Identificativo logico del dispositivo. Deve corrispondere a quello che
-// gestisci lato Node.js
-const char* DEVICE_ID = "esp32-laboratorio";
+const char* CONTRACT_ADDRESS = "0xINSERISCI_ADDRESS_CONTRATTO";
 
-// Token sepmlice per evitare che chiunque mandi dati al server. Per demo va
-// bene, non è sicurezza "forte"
+// indirizzo pubblico derivato dalla chiave privata che userà il dispositivo per
+// firmare
+const char* DEVICE_ADDRESS =
+    "0xINSERISCI_ADDRESS_DEL_DEVICE";  // placehorder, poi mettero address reale
+                                       // generato con Foundry
+
+// id della chain, seve anche questo per firmare messaggio
+const uint64_t CHAIN_ID = 31337;  // se usiamo anvil
+
+// Token semplice per evitare che chiunque mandi dati al server, eventualmente
+// intasandolo. Per demo va bene, non è sicurezza "forte", è un filtro leggero
 const char* DEVICE_API_KEY = "dev-secret-esp32-1";
 
 // Ogni quanto inviare misura
 const unsigned long SEND_INTERVAL_MS = 10000;  // 10 secondi
 
 unsigned long lastSendTime = 0;
+
+// evita che misurazione valida con firma valida venga inviata più volte:
+// contratto salverà ultimo nonce accettato e rifiuta quelli vecchi
+uint64_t measurementNonce = 0;
 
 // =======================
 // SETUP
@@ -58,7 +69,9 @@ void loop() {
     Serial.println("Misura letta: ");
     Serial.println(measurementValue);
 
-    sendMeasurement(measurementValue);
+    // ogni volta che esp32 invia una misura, aumenta il numero progressivo
+    measurementNonce++;
+    sendMeasurement(measurementValue, measurementNonce);
   }
 }
 
@@ -97,26 +110,34 @@ int readMeasurement() {
 // =======================
 // INVIO AL SERVER NODE.JS
 // =======================
-void sendMeasurement(int value) {
+void sendMeasurement(int value, uint64_t nonce) {
   HTTPClient http;
 
   Serial.println("Invio POST a: ");
   Serial.println(SERVER_URL);
 
+  uint64_t deviceTimestamp = millis() / 1000;
+
   http.begin(SERVER_URL);
 
   // costruisco Header della POST
   http.addHeader("Content-type", "application/json");
-  http.addHeader("X-device-Id", DEVICE_ID);
+  http.addHeader("X-Device-Address", DEVICE_ADDRESS);
   http.addHeader("X-API-Key", DEVICE_API_KEY);
 
   // costruisco il body della POST
   String body = "{";
-  body += "\"deviceId\":\"";
-  body += DEVICE_ID;
+  body += "\"deviceAddress\":\"";
+  body += DEVICE_ADDRESS;
   body += "\",";
   body += "\"value\":";
   body += String(value);
+  body += ",";
+  body += "\"deviceTimestamp\":";
+  body += String(deviceTimestamp);
+  body += ",";
+  body += "\"nonce\":";
+  body += String(nonce);
   body += "}";
 
   Serial.print("Body JSON: ");
