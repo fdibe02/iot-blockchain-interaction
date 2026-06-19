@@ -2,6 +2,7 @@
 
 #include <HTTPClient.h>
 #include <WiFi.h>
+#include <time.h>  // funzioni per gestire l'orologio dell'ESP32 dop sincronizzazone NTP
 
 // =======================
 // CONFIGURAZIONE WIFI
@@ -9,6 +10,11 @@
 
 const char* WIFI_SSID = "NOME_WIFI";
 const char* WIFI_PASSWORD = "PASSWORD_WIFI";
+
+const char* NTP_SERVER_1 = "pool.ntp.org";
+const char* NTP_SERVER_2 = "time.nist.gov";
+const long GMT_OFFSET_SEC = 0;  // non ci interessa avere ora locale italiana
+const int DAYLIGHT_OFFSET_SEC = 0;
 
 // usa IP locale del Mac, tipo: http://192.168.1.50:3000/api/measurements
 const char* SERVER_URL = "http://192.168.1.50:3000/api/measurements";
@@ -37,6 +43,8 @@ unsigned long lastSendTime = 0;
 // contratto salverà ultimo nonce accettato e rifiuta quelli vecchi
 uint64_t measurementNonce = 0;
 
+// mmemorizza l'esito della sincronizzazione NTP
+bool timeSynchronized = false;
 // =======================
 // SETUP
 // =======================
@@ -48,15 +56,21 @@ void setup() {
   Serial.println();
   Serial.println("Avvio ESP32 IoT Data Chain...");
 
-  connectToWiFi();
+  connectToWiFi();  // connetto al wifi
 
-  randomSeed(analogRead(34));  // rendo causale la simulaizone della misura
+  timeSynchronized = synchronizeTime();  // chiedo l'orario
+
+  randomSeed(analogRead(34));  // rendo casuale la simulazione della misura
 }
 
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi disconnesso. Riprovo la connessione...");
     connectToWiFi();
+
+    if (!timeSynchronized) {
+      timeSynchronized = synchronizeTime();
+    }
   }
 
   unsigned long currentTime = millis();  // tempo da quando la scheda è connessa
@@ -70,7 +84,7 @@ void loop() {
     Serial.println(measurementValue);
 
     // ogni volta che esp32 invia una misura, aumenta il numero progressivo
-    measurementNonce++;
+    measurementNonce++;  // così incremento anche se invio fallisce
     sendMeasurement(measurementValue, measurementNonce);
   }
 }
@@ -97,6 +111,41 @@ void connectToWiFi() {
 }
 
 // =======================
+// SINCRONIZZAZIONE ORARIO
+// =======================
+
+bool synchronizeTime() {
+  Serial.println("Sincronizzazione ora via NTP...");
+
+  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER_1, NTP_SERVER_2);
+
+  struct tm timeinfo;
+
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Errore: NTP non sincronizzato.");
+    return false;
+  }
+
+  Serial.println("Ora sincronizzata tramite NTP.");
+  return true;
+}
+
+// =======================
+// LOGICA TIMESTAMP
+// =======================
+
+// Torna un timestamp Unix reale se NTP è disponibile.
+// Se NTP non è disponibile, usa millis() / 1000 solo come fallback demo.
+uint64_t getDeviceTimestamp() {
+  if (!timeSynchronized) {
+    Serial.println("Ora non sincronizzata, uso millis() come fallback demo.");
+    return millis() / 1000;
+  }
+
+  return (uint64_t)time(nullptr);
+}
+
+// =======================
 // LETTURA MISURAZIONE
 // =======================
 int readMeasurement() {
@@ -116,12 +165,15 @@ void sendMeasurement(int value, uint64_t nonce) {
   Serial.println("Invio POST a: ");
   Serial.println(SERVER_URL);
 
-  uint64_t deviceTimestamp = millis() / 1000;
+  uint64_t deviceTimestamp = getDeviceTimestamp();
 
-  http.begin(SERVER_URL);
+  if (!http.begin(SERVER_URL)) {
+    Serial.println("Errore inizializzazione HTTP.");
+    return;
+  }
 
   // costruisco Header della POST
-  http.addHeader("Content-type", "application/json");
+  http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Device-Address", DEVICE_ADDRESS);
   http.addHeader("X-API-Key", DEVICE_API_KEY);
 
