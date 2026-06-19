@@ -2,11 +2,7 @@
 // Contiene l ABI del contratto IoTDataStorage.
 
 var abi = [
-    {
-        "type": "constructor",
-        "inputs": [],
-        "stateMutability": "nonpayable"
-    },
+    { "type": "constructor", "inputs": [], "stateMutability": "nonpayable" },
     {
         "type": "function",
         "name": "getDevice",
@@ -23,11 +19,7 @@ var abi = [
                 "type": "tuple",
                 "internalType": "struct IoTDataStorage.Device",
                 "components": [
-                    {
-                        "name": "isRegistered",
-                        "type": "bool",
-                        "internalType": "bool"
-                    },
+                    { "name": "isRegistered", "type": "bool", "internalType": "bool" },
                     {
                         "name": "metadataURI",
                         "type": "string",
@@ -41,6 +33,19 @@ var abi = [
                 ]
             }
         ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "getLastNonce",
+        "inputs": [
+            {
+                "name": "deviceAddress",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
         "stateMutability": "view"
     },
     {
@@ -59,16 +64,19 @@ var abi = [
                 "type": "tuple",
                 "internalType": "struct IoTDataStorage.Measurement",
                 "components": [
+                    { "name": "value", "type": "int256", "internalType": "int256" },
                     {
-                        "name": "value",
-                        "type": "int256",
-                        "internalType": "int256"
-                    },
-                    {
-                        "name": "timestamp",
+                        "name": "deviceTimestamp",
                         "type": "uint256",
                         "internalType": "uint256"
-                    }
+                    },
+                    {
+                        "name": "blockchainTimestamp",
+                        "type": "uint256",
+                        "internalType": "uint256"
+                    },
+                    { "name": "nonce", "type": "uint256", "internalType": "uint256" },
+                    { "name": "dataHash", "type": "bytes32", "internalType": "bytes32" }
                 ]
             }
         ],
@@ -83,11 +91,7 @@ var abi = [
                 "type": "address",
                 "internalType": "address"
             },
-            {
-                "name": "index",
-                "type": "uint256",
-                "internalType": "uint256"
-            }
+            { "name": "index", "type": "uint256", "internalType": "uint256" }
         ],
         "outputs": [
             {
@@ -95,16 +99,19 @@ var abi = [
                 "type": "tuple",
                 "internalType": "struct IoTDataStorage.Measurement",
                 "components": [
+                    { "name": "value", "type": "int256", "internalType": "int256" },
                     {
-                        "name": "value",
-                        "type": "int256",
-                        "internalType": "int256"
-                    },
-                    {
-                        "name": "timestamp",
+                        "name": "deviceTimestamp",
                         "type": "uint256",
                         "internalType": "uint256"
-                    }
+                    },
+                    {
+                        "name": "blockchainTimestamp",
+                        "type": "uint256",
+                        "internalType": "uint256"
+                    },
+                    { "name": "nonce", "type": "uint256", "internalType": "uint256" },
+                    { "name": "dataHash", "type": "bytes32", "internalType": "bytes32" }
                 ]
             }
         ],
@@ -120,37 +127,53 @@ var abi = [
                 "internalType": "address"
             }
         ],
-        "outputs": [
+        "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "getMeasurementHash",
+        "inputs": [
             {
-                "name": "",
+                "name": "deviceAddress",
+                "type": "address",
+                "internalType": "address"
+            },
+            { "name": "value", "type": "int256", "internalType": "int256" },
+            {
+                "name": "deviceTimestamp",
                 "type": "uint256",
                 "internalType": "uint256"
-            }
+            },
+            { "name": "nonce", "type": "uint256", "internalType": "uint256" }
         ],
+        "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
         "stateMutability": "view"
     },
     {
         "type": "function",
         "name": "getOwner",
         "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "address",
-                "internalType": "address"
-            }
-        ],
+        "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
         "stateMutability": "view"
     },
     {
         "type": "function",
-        "name": "recordMeasurement",
+        "name": "recordSignedMeasurement",
         "inputs": [
             {
-                "name": "value",
-                "type": "int256",
-                "internalType": "int256"
-            }
+                "name": "deviceAddress",
+                "type": "address",
+                "internalType": "address"
+            },
+            { "name": "value", "type": "int256", "internalType": "int256" },
+            {
+                "name": "deviceTimestamp",
+                "type": "uint256",
+                "internalType": "uint256"
+            },
+            { "name": "nonce", "type": "uint256", "internalType": "uint256" },
+            { "name": "signature", "type": "bytes", "internalType": "bytes" }
         ],
         "outputs": [],
         "stateMutability": "nonpayable"
@@ -164,11 +187,7 @@ var abi = [
                 "type": "address",
                 "internalType": "address"
             },
-            {
-                "name": "metadataURI",
-                "type": "string",
-                "internalType": "string"
-            }
+            { "name": "metadataURI", "type": "string", "internalType": "string" }
         ],
         "outputs": [],
         "stateMutability": "nonpayable"
@@ -203,16 +222,40 @@ var abi = [
                 "internalType": "address"
             },
             {
+                "name": "relayer",
+                "type": "address",
+                "indexed": true,
+                "internalType": "address"
+            },
+            {
                 "name": "value",
                 "type": "int256",
                 "indexed": false,
                 "internalType": "int256"
             },
             {
-                "name": "timestamp",
+                "name": "deviceTimestamp",
                 "type": "uint256",
                 "indexed": false,
                 "internalType": "uint256"
+            },
+            {
+                "name": "blockchainTimestamp",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            },
+            {
+                "name": "nonce",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            },
+            {
+                "name": "dataHash",
+                "type": "bytes32",
+                "indexed": false,
+                "internalType": "bytes32"
             }
         ],
         "anonymous": false
@@ -227,14 +270,12 @@ var abi = [
         "name": "IoTDataStorage__DeviceNotRegistered",
         "inputs": []
     },
+    { "type": "error", "name": "IoTDataStorage__InvalidNonce", "inputs": [] },
     {
         "type": "error",
-        "name": "IoTDataStorage__NoMeasurements",
+        "name": "IoTDataStorage__InvalidSignature",
         "inputs": []
     },
-    {
-        "type": "error",
-        "name": "IoTDataStorage__NotOwner",
-        "inputs": []
-    }
+    { "type": "error", "name": "IoTDataStorage__NoMeasurements", "inputs": [] },
+    { "type": "error", "name": "IoTDataStorage__NotOwner", "inputs": [] }
 ];
