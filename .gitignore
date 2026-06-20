@@ -16,3 +16,6 @@
 node_modules/
 dist/
 build/
+
+# Local deployed contract address
+frontend/js/contract-address.js

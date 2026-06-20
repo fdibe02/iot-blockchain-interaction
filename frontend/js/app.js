@@ -185,15 +185,27 @@ function getLatestMeasurement() {
 
 function showLatestMeasurement(measurement) {
     var value = measurement[0].toString();
-    var timestamp = Number(measurement[1]);
+    var deviceTimestamp = Number(measurement[1]);
+    var blockchainTimestamp = Number(measurement[2]);
+    var nonce = measurement[3].toString();
+    var dataHash = measurement[4];
 
     document.getElementById("latestMeasurementValue").innerHTML = value;
+    document.getElementById("latestMeasurementNonce").innerHTML = nonce;
+    document.getElementById("latestMeasurementDataHash").innerHTML = dataHash;
 
-    if (timestamp === 0) {
-        document.getElementById("latestMeasurementTimestamp").innerHTML = "-";
+    if (deviceTimestamp === 0) {
+        document.getElementById("latestMeasurementDeviceTimestamp").innerHTML = "-";
     } else {
-        document.getElementById("latestMeasurementTimestamp").innerHTML =
-            new Date(timestamp * 1000).toLocaleString("it-IT");
+        document.getElementById("latestMeasurementDeviceTimestamp").innerHTML =
+            new Date(deviceTimestamp * 1000).toLocaleString("it-IT");
+    }
+
+    if (blockchainTimestamp === 0) {
+        document.getElementById("latestMeasurementBlockchainTimestamp").innerHTML = "-";
+    } else {
+        document.getElementById("latestMeasurementBlockchainTimestamp").innerHTML =
+            new Date(blockchainTimestamp * 1000).toLocaleString("it-IT");
     }
 }
 
@@ -202,6 +214,10 @@ function showLatestMeasurementError(error) {
 
     document.getElementById("latestMeasurementValue").innerHTML =
         "Errore durante la lettura della misurazione";
+    document.getElementById("latestMeasurementDeviceTimestamp").innerHTML = "-";
+    document.getElementById("latestMeasurementBlockchainTimestamp").innerHTML = "-";
+    document.getElementById("latestMeasurementNonce").innerHTML = "-";
+    document.getElementById("latestMeasurementDataHash").innerHTML = "-";
 }
 
 

@@ -21,5 +21,19 @@ show-address:
 
 record-measurement:
 	@CONTRACT_ADDRESS=$$(node -e 'const fs = require("node:fs"); const file = "frontend/js/contract-address.js"; const content = fs.readFileSync(file, "utf8"); const match = content.match(/contractAddress\s*=\s*"(0x[a-fA-F0-9]{40})"/); if (!match) { console.error("Contract address non trovato in " + file); process.exit(1); } console.log(match[1]);'); \
-	echo "Invio misurazione $(VALUE) al contratto $$CONTRACT_ADDRESS"; \
-	cast send "$$CONTRACT_ADDRESS" "recordMeasurement(int256)" "$(VALUE)" --rpc-url "$(RPC_URL)" --private-key "$(DEVICE_PRIVATE_KEY)"
+	DEVICE_ADDRESS=$$(cast wallet address "$(DEVICE_PRIVATE_KEY)"); \
+	DEVICE_TIMESTAMP=$$(date +%s); \
+	LAST_NONCE=$$(cast call "$$CONTRACT_ADDRESS" "getLastNonce(address)(uint256)" "$$DEVICE_ADDRESS" --rpc-url "$(RPC_URL)"); \
+	NONCE=$$((LAST_NONCE + 1)); \
+	echo "Contratto: $$CONTRACT_ADDRESS"; \
+	echo "Device: $$DEVICE_ADDRESS"; \
+	echo "Valore: $(VALUE)"; \
+	echo "Timestamp device: $$DEVICE_TIMESTAMP"; \
+	echo "Last nonce: $$LAST_NONCE"; \
+	echo "Nonce: $$NONCE"; \
+	HASH=$$(cast call "$$CONTRACT_ADDRESS" "getMeasurementHash(address,int256,uint256,uint256)(bytes32)" "$$DEVICE_ADDRESS" "$(VALUE)" "$$DEVICE_TIMESTAMP" "$$NONCE" --rpc-url "$(RPC_URL)"); \
+	echo "Hash dati: $$HASH"; \
+	SIGNATURE=$$(cast wallet sign --private-key "$(DEVICE_PRIVATE_KEY)" "$$HASH"); \
+	echo "Firma: $$SIGNATURE"; \
+	cast send "$$CONTRACT_ADDRESS" "recordSignedMeasurement(address,int256,uint256,uint256,bytes)" "$$DEVICE_ADDRESS" "$(VALUE)" "$$DEVICE_TIMESTAMP" "$$NONCE" "$$SIGNATURE" --rpc-url "$(RPC_URL)" --private-key "$(ANVIL_PRIVATE_KEY)"
+	
