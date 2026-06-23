@@ -1,16 +1,16 @@
 {
-  "name": "iot-data-chain-middleware",
-  "version": "0.1.0",
-  "private": true,
+  "name": "iot-blockchain-middleware",
+  "version": "1.0.0",
+  "description": "Middleware Node.js per ricevere misurazioni firmate da ESP32 e registrarle su smart contract.",
   "type": "module",
+  "private": true,
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "start": "node server.js",
+    "dev": "node --watch server.js"
   },
   "dependencies": {
-    "cors": "^2.8.5",
     "dotenv": "^16.4.7",
-    "ethers": "^6.16.0",
+    "ethers": "^6.15.0",
     "express": "^5.1.0"
   }
 }
