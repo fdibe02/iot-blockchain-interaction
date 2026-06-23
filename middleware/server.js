@@ -83,6 +83,7 @@ async function recordMeasurement(req, res, next) {
     try {
         // Prima valido e normalizzo il payload ricevuto dall'ESP32.
         // Poi controllo device registrato e nonce, così evito transazioni inutili.        const measurement = parseMeasurementRequest(req);
+        const measurement = parseMeasurementRequest(req);
 
         await assertDeviceIsRegistered(measurement.deviceAddress);
         await assertNonceIsFresh(measurement.deviceAddress, measurement.nonce);
