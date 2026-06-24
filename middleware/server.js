@@ -28,6 +28,8 @@ class HttpError extends Error {
 
 validateEnvironment();
 
+const contractAddress = ethers.getAddress(CONTRACT_ADDRESS);
+
 const app = express();
 
 app.use(express.json({ limit: "16kb" }));
@@ -36,7 +38,7 @@ const provider = new ethers.JsonRpcProvider(RPC_URL);
 
 const relayerWallet = new ethers.Wallet(RELAYER_PRIVATE_KEY, provider);
 
-const iotDataStorage = new ethers.Contract(CONTRACT_ADDRESS, IOT_DATA_STORAGE_ABI, relayerWallet);
+const iotDataStorage = new ethers.Contract(contractAddress, IOT_DATA_STORAGE_ABI, relayerWallet);
 
 // 2. Routes
 
@@ -55,7 +57,7 @@ app.listen(PORT, onServerStart);
 
 function onServerStart() {
     console.log(`Middleware avviato su http://localhost:${PORT}`);
-    console.log(`Contratto: ${CONTRACT_ADDRESS}`);
+    console.log(`Contratto: ${contractAddress}`);
     console.log(`Relayer: ${relayerWallet.address}`);
 }
 
@@ -78,37 +80,31 @@ async function handleHealthCheck(req, res, next) {
     }
 }
 
-// all'interno ci sono controlli che servono per evitare di inviare tx blockchain inutili che farebbero comunque spendere gas
 async function recordMeasurement(req, res, next) {
     try {
         // Prima valido e normalizzo il payload ricevuto dall'ESP32.
-        // Poi controllo device registrato e nonce, così evito transazioni inutili.        const measurement = parseMeasurementRequest(req);
+        // Poi controllo device registrato e nonce, così evito transazioni inutili.
         const measurement = parseMeasurementRequest(req);
 
         await assertDeviceIsRegistered(measurement.deviceAddress);
         await assertNonceIsFresh(measurement.deviceAddress, measurement.nonce);
 
-        // superati "primi controlli", adesso controllo che hash e firma corrispondono all'address del dispositivo
-        const dataHash = await iotDataStorage.getMeasurementHash(
-            measurement.deviceAddress,
-            measurement.value,
-            measurement.deviceTimestamp,
-            measurement.nonce,
-        );
+        // Calcolo locale dell'hash, senza chiamare getMeasurementHash sul contratto.
+        const dataHash = await getMeasurementHashLocal(measurement);
 
         assertSignatureMatchesDevice(
             dataHash,
             measurement.signature,
-            measurement.deviceAddress,
+            measurement.deviceAddress
         );
 
-        // registro misurazione
+        // Registro la misurazione on-chain.
         const transactionResponse = await iotDataStorage.recordSignedMeasurement(
             measurement.deviceAddress,
             measurement.value,
             measurement.deviceTimestamp,
             measurement.nonce,
-            measurement.signature,
+            measurement.signature
         );
 
         const receipt = await transactionResponse.wait(CONFIRMATIONS);
@@ -187,6 +183,23 @@ function parseMeasurementRequest(req) {
     };
 }
 
+async function getMeasurementHashLocal(measurement) {
+    const network = await provider.getNetwork();
+    const chainId = network.chainId;
+
+    return ethers.solidityPackedKeccak256(
+        ["address", "uint256", "address", "int256", "uint256", "uint256"],
+        [
+            contractAddress,
+            chainId,
+            measurement.deviceAddress,
+            measurement.value,
+            measurement.deviceTimestamp,
+            measurement.nonce,
+        ]
+    );
+}
+
 function isIntegerLike(value) {
     if (typeof value === "bigint") {
         return true;
@@ -220,13 +233,18 @@ async function assertNonceIsFresh(deviceAddress, nonce) {
 }
 
 function assertSignatureMatchesDevice(dataHash, signature, deviceAddress) {
-    const recoveredAddress = ethers.verifyMessage(
-        ethers.getBytes(dataHash),
-        signature
-    );
+    const recoveredAddress = recoverAddress(dataHash, signature);
 
-    if (recoveredAddress !== deviceAddress) {
+    if (recoveredAddress.toLowerCase() !== deviceAddress.toLowerCase()) {
         throw new HttpError(400, "Firma non coerente con il deviceAddress");
+    }
+}
+
+function recoverAddress(dataHash, signature) {
+    try {
+        return ethers.verifyMessage(ethers.getBytes(dataHash), signature);
+    } catch {
+        throw new HttpError(400, "Firma non valida");
     }
 }
 
