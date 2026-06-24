@@ -56,26 +56,50 @@ async function main() {
         expectedStatus: 401,
     });
 
-    const tamperedPayload = {
+    const tamperedValuePayload = {
         ...validPayload,
         value: "99",
     };
 
     await runExpectedFailureTest({
-        title: "Test 2 - Payload alterato dopo la firma",
-        payload: tamperedPayload,
+        title: "Test 2 - Valore alterato dopo la firma",
+        payload: tamperedValuePayload,
+        apiKey: DEVICE_API_KEY,
+        expectedStatus: 400,
+    });
+
+    const tamperedTimestampPayload = {
+        ...validPayload,
+        deviceTimestamp: (BigInt(validPayload.deviceTimestamp) + 60n).toString(),
+    };
+
+    await runExpectedFailureTest({
+        title: "Test 3 - Timestamp alterato dopo la firma",
+        payload: tamperedTimestampPayload,
+        apiKey: DEVICE_API_KEY,
+        expectedStatus: 400,
+    });
+
+    const tamperedNoncePayload = {
+        ...validPayload,
+        nonce: (BigInt(validPayload.nonce) + 1n).toString(),
+    };
+
+    await runExpectedFailureTest({
+        title: "Test 4 - Nonce alterato dopo la firma",
+        payload: tamperedNoncePayload,
         apiKey: DEVICE_API_KEY,
         expectedStatus: 400,
     });
 
     await runExpectedSuccessTest({
-        title: "Test 3 - Misura valida",
+        title: "Test 5 - Misura valida",
         payload: validPayload,
         apiKey: DEVICE_API_KEY,
     });
 
     await runExpectedFailureTest({
-        title: "Test 4 - Replay della stessa misura",
+        title: "Test 6 - Replay della stessa misura",
         payload: validPayload,
         apiKey: DEVICE_API_KEY,
         expectedStatus: 409,
