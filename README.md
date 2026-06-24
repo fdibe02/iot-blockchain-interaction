@@ -8,6 +8,8 @@ Il middleware riceve le misurazioni firmate, le valida preventivamente, le inolt
 
 Una web app permette all'utente di collegare MetaMask, registrare/configurare un dispositivo e leggere le misurazioni salvate sulla blockchain.
 
+Il caso d'uso di riferimento è il monitoraggio della catena del freddo: il dispositivo rappresenta un nodo IoT installato, ad esempio, su un contenitore, un magazzino o un mezzo di trasporto refrigerato, e registra misurazioni di temperatura utili a ricostruire lo storico delle condizioni ambientali. La blockchain viene usata come registro condiviso e verificabile delle misurazioni, mentre la firma del dispositivo serve a dimostrare che il dato è stato prodotto dal nodo registrato e non modificato dal middleware.
+
 ## Architettura
 
 Flusso finale previsto:
@@ -38,13 +40,13 @@ simulate-device.js -> Node.js middleware -> Smart Contract -> Web App
 
 Il firmware ESP32 attuale invia già una richiesta HTTP con i campi principali della misura, ma non genera ancora la firma crittografica richiesta dal middleware. Per questo motivo, in questa fase, lo script `middleware/scripts/simulate-device.js` viene usato per simulare il dispositivo firmante finale.
 
-| Componente | Stato attuale | Obiettivo finale |
-| ---------- | ------------- | ---------------- |
-| Smart contract | Registra dispositivi, verifica firme e nonce, salva misurazioni firmate. | Restare il punto di verità on-chain del sistema. |
-| Middleware | Riceve payload firmati, verifica API key, formato, registrazione, nonce e firma prima di inviare la tx. | Fare da gateway/relayer per dispositivi reali. |
-| Simulatore Node.js | Simula un dispositivo firmante e permette di testare il flusso completo. | Essere sostituito dal firmware ESP32 firmante. |
-| Firmware ESP32 | Simula misure, usa WiFi/HTTP/NTP e invia i campi principali della misura. | Firmare la misura e inviare il payload completo al middleware. |
-| Frontend | Permette connessione MetaMask, registrazione device e lettura dati on-chain. | Restare interfaccia di configurazione e consultazione. |
+| Componente         | Stato attuale                                                                                           | Obiettivo finale                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Smart contract     | Registra dispositivi, verifica firme e nonce, salva misurazioni firmate.                                | Restare il punto di verità on-chain del sistema.               |
+| Middleware         | Riceve payload firmati, verifica API key, formato, registrazione, nonce e firma prima di inviare la tx. | Fare da gateway/relayer per dispositivi reali.                 |
+| Simulatore Node.js | Simula un dispositivo firmante e permette di testare il flusso completo.                                | Essere sostituito dal firmware ESP32 firmante.                 |
+| Firmware ESP32     | Simula misure, usa WiFi/HTTP/NTP e invia i campi principali della misura.                               | Firmare la misura e inviare il payload completo al middleware. |
+| Frontend           | Permette connessione MetaMask, registrazione device e lettura dati on-chain.                            | Restare interfaccia di configurazione e consultazione.         |
 
 ## Componenti principali
 
@@ -54,7 +56,7 @@ Contiene il codice eseguito dal microcontrollore.
 
 Obiettivo finale del firmware:
 
-* raccogliere o simulare misurazioni ambientali;
+* raccogliere o simulare misurazioni ambientali, in particolare valori di temperatura nel caso d'uso della catena del freddo;
 * costruire il messaggio da inviare;
 * firmare la misurazione con la chiave privata del dispositivo;
 * inviare i dati firmati al middleware tramite richiesta HTTP.
@@ -82,7 +84,7 @@ Il payload finale atteso dal middleware ha questa struttura:
 Dove:
 
 * `deviceAddress` è l'indirizzo Ethereum associato al dispositivo;
-* `value` è il valore misurato o simulato;
+* `value` è il valore misurato o simulato, ad esempio la temperatura rilevata nel caso d'uso della catena del freddo;
 * `deviceTimestamp` è il timestamp prodotto dal dispositivo;
 * `nonce` serve a distinguere le misurazioni e a ridurre il rischio di replay;
 * `signature` è la firma digitale dei dati della misurazione.
@@ -158,10 +160,10 @@ La web app non produce direttamente le misurazioni: il suo ruolo è principalmen
 
 Nel progetto ci sono tre ruoli principali:
 
-| Ruolo | Descrizione |
-| ----- | ----------- |
-| Utente/owner | Usa MetaMask dalla web app per registrare/configurare un dispositivo. |
-| Dispositivo | Produce la misura e, nel flusso finale, firma i dati. |
+| Ruolo              | Descrizione                                                                  |
+| ------------------ | ---------------------------------------------------------------------------- |
+| Utente/owner       | Usa MetaMask dalla web app per registrare/configurare un dispositivo.        |
+| Dispositivo        | Produce la misura e, nel flusso finale, firma i dati.                        |
 | Relayer/middleware | Riceve dati firmati, paga il gas e invia la transazione allo smart contract. |
 
 La distinzione tra dispositivo e relayer è centrale: il relayer paga la transazione, ma non è il proprietario crittografico della misura.
@@ -412,9 +414,9 @@ Nel sistema finale il middleware non deve possedere la private key del dispositi
 
 ## Stato del progetto
 
-Il progetto è pensato come prototipo didattico/sperimentale per una tesi triennale.
+Il progetto è pensato come prototipo didattico/sperimentale per una tesi triennale, verticalizzato sul caso d'uso del monitoraggio della catena del freddo.
 
-L'obiettivo non è realizzare un sistema IoT industriale completo, ma dimostrare un flusso end-to-end:
+L'obiettivo non è realizzare un sistema IoT industriale completo per logistica refrigerata, ma dimostrare un flusso end-to-end:
 
 ```text
 misurazione -> firma del dispositivo -> middleware -> smart contract -> lettura da web app
