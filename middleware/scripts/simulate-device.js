@@ -14,17 +14,18 @@ const MEASUREMENT_VALUE = process.argv[2] ?? process.env.MEASUREMENT_VALUE ?? "2
 const IOT_DATA_STORAGE_ABI = [
     "function getDevice(address deviceAddress) view returns (tuple(bool isRegistered, string metadataURI, uint256 registeredAt))",
     "function getLastNonce(address deviceAddress) view returns (uint256)",
-    "function getMeasurementHash(address deviceAddress, int256 value, uint256 deviceTimestamp, uint256 nonce) view returns (bytes32)",
 ];
 
 validateEnvironment();
+
+const contractAddress = ethers.getAddress(CONTRACT_ADDRESS);
 
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 
 const deviceWallet = new ethers.Wallet(DEVICE_PRIVATE_KEY, provider);
 
 const iotDataStorage = new ethers.Contract(
-    CONTRACT_ADDRESS,
+    contractAddress,
     IOT_DATA_STORAGE_ABI,
     provider,
 );
@@ -40,7 +41,7 @@ async function main() {
 
     await assertDeviceIsRegistered(deviceAddress);
 
-    const dataHash = await iotDataStorage.getMeasurementHash(
+    const dataHash = await getMeasurementHashLocal(
         deviceAddress,
         value,
         deviceTimestamp,
@@ -90,9 +91,9 @@ function assertSignatureMatchesDevice(dataHash, signature, deviceAddress) {
         signature,
     );
 
-    if (recoveredAddress !== deviceAddress) {
+    if (ethers.getAddress(recoveredAddress) !== ethers.getAddress(deviceAddress)) {
         throw new Error(
-            `Firma non valida: recovered=${recoveredAddress}, expected=${deviceAddress}`,
+            `Firma non valida: recovered=${recoveredAddress}, expected=${deviceAddress}`
         );
     }
 }
@@ -105,6 +106,27 @@ async function assertDeviceIsRegistered(deviceAddress) {
             `Device non registrato: ${deviceAddress}. Registralo prima nel contratto.`,
         );
     }
+}
+
+async function getMeasurementHashLocal({
+    deviceAddress,
+    value,
+    deviceTimestamp,
+    nonce,
+}) {
+    const network = await provider.getNetwork();
+
+    return ethers.solidityPackedKeccak256(
+        ["address", "uint256", "address", "int256", "uint256", "uint256"],
+        [
+            contractAddress,
+            network.chainId,
+            deviceAddress,
+            value,
+            deviceTimestamp,
+            nonce,
+        ]
+    );
 }
 
 function parseInteger(value, variableName) {
