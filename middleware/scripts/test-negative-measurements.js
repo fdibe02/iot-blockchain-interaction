@@ -110,12 +110,12 @@ async function main() {
 }
 
 async function buildSignedPayload({ deviceAddress, value, deviceTimestamp, nonce }) {
-    const dataHash = await getMeasurementHashLocal(
+    const dataHash = await getMeasurementHashLocal({
         deviceAddress,
         value,
         deviceTimestamp,
         nonce,
-    );
+    });
 
     const signature = await deviceWallet.signMessage(ethers.getBytes(dataHash));
 

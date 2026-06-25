@@ -41,12 +41,12 @@ async function main() {
 
     await assertDeviceIsRegistered(deviceAddress);
 
-    const dataHash = await getMeasurementHashLocal(
+    const dataHash = await getMeasurementHashLocal({
         deviceAddress,
         value,
         deviceTimestamp,
         nonce,
-    );
+    });
 
     const signature = await deviceWallet.signMessage(ethers.getBytes(dataHash));
 
