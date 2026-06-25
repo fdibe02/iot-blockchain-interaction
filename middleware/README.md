@@ -47,7 +47,6 @@ middleware/
 ├── server.js
 ├── package.json
 ├── package-lock.json
-├── .env.example
 ├── .env.anvil.example
 ├── .env.sepolia.example
 ├── README.md

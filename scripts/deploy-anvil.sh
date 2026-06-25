@@ -16,16 +16,17 @@ SCRIPT_CONTRACT="DeployIoTDataStorage"
 CONTRACT_NAME="IoTDataStorage"
 
 FRONTEND_ADDRESS_FILE="frontend/js/contract-address.js"
+ANVIL_ENV_FILE="middleware/.env.anvil"
 
 # ==========================
 # CONTROLLI
 # ==========================
 
-if [ -z "$ANVIL_PRIVATE_KEY" ]; then
-  echo "Errore: ANVIL_PRIVATE_KEY non è impostata."
+if [ -z "$OWNER_PRIVATE_KEY" ]; then
+  echo "Errore: OWNER_PRIVATE_KEY non è impostata."
   echo ""
   echo "Esempio:"
-  echo "export ANVIL_PRIVATE_KEY=0x..."
+  echo "export OWNER_PRIVATE_KEY=0x..."
   exit 1
 fi
 
@@ -46,7 +47,7 @@ cd "$FOUNDRY_DIR"
 forge script "script/$SCRIPT_FILE:$SCRIPT_CONTRACT" \
   --rpc-url "$RPC_URL" \
   --broadcast \
-  --private-key "$ANVIL_PRIVATE_KEY"
+  --private-key "$OWNER_PRIVATE_KEY"
 
 cd ..
 
@@ -100,6 +101,33 @@ cat > "$FRONTEND_ADDRESS_FILE" <<EOF
 var contractAddress = "$CONTRACT_ADDRESS";
 EOF
 
+if [ ! -f "$ANVIL_ENV_FILE" ]; then
+  echo "Errore: file env Anvil non trovato:"
+  echo "$ANVIL_ENV_FILE"
+  exit 1
+fi
+
+node -e "
+const fs = require('node:fs');
+
+const envFile = process.argv[1];
+const contractAddress = process.argv[2];
+
+const content = fs.readFileSync(envFile, 'utf8');
+
+if (!/^CONTRACT_ADDRESS=/m.test(content)) {
+  console.error('CONTRACT_ADDRESS non trovato in ' + envFile);
+  process.exit(1);
+}
+
+const updatedContent = content.replace(
+  /^CONTRACT_ADDRESS=.*/m,
+  'CONTRACT_ADDRESS=' + contractAddress
+);
+
+fs.writeFileSync(envFile, updatedContent);
+" "$ANVIL_ENV_FILE" "$CONTRACT_ADDRESS"
+
 echo ""
 echo "Deploy completato."
 echo "Indirizzo contratto:"
@@ -107,3 +135,5 @@ echo "$CONTRACT_ADDRESS"
 echo ""
 echo "File aggiornato:"
 echo "$FRONTEND_ADDRESS_FILE"
+echo "Env Anvil aggiornato:"
+echo "$ANVIL_ENV_FILE"
