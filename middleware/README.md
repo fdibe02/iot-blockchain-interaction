@@ -48,10 +48,13 @@ middleware/
 ├── package.json
 ├── package-lock.json
 ├── .env.example
+├── .env.anvil.example
+├── .env.sepolia.example
 ├── README.md
 └── scripts/
     ├── simulate-device.js
-    └── test-negative-measurements.js
+    ├── test-negative-measurements.js
+    └── verify-hash-consistency.js
 ```
 
 ## Installazione
@@ -64,10 +67,11 @@ npm install
 
 ## Configurazione
 
-Creare il file `.env` partendo dal modello:
+Gli script npm usano file di configurazione separati per ambiente.
 
 ```bash
-cp .env.example .env
+cp .env.anvil.example .env.anvil
+cp .env.sepolia.example .env.sepolia
 ```
 
 Esempio di configurazione locale con Anvil:
@@ -99,23 +103,35 @@ MEASUREMENT_VALUE=25
 | `DEVICE_PRIVATE_KEY`  | Private key del dispositivo simulato negli script Node.js.                  |
 | `MEASUREMENT_VALUE`   | Valore di default della misura simulata.                                    |
 
-Il file `.env` non deve essere committato, perché contiene chiavi private e valori sensibili. Deve invece essere committato `.env.example`, che contiene solo placeholder.
+I file `.env`, `.env.anvil` e `.env.sepolia` non devono essere committati, perché contengono chiavi private e valori sensibili. Devono invece essere committati solo i file `.env*.example`, che contengono placeholder.
 
 ## Avvio del server
 
-Dalla cartella `middleware`:
+Per Anvil:
 
 ```bash
-npm run dev
+npm run dev:anvil
 ```
 
 oppure:
 
 ```bash
-npm start
+npm run start:anvil
 ```
 
-Il comando `npm run dev` usa `node --watch` e riavvia automaticamente il server quando viene modificato `server.js`.
+Per Sepolia:
+
+```bash
+npm run dev:sepolia
+```
+
+oppure:
+
+```bash
+npm run start:sepolia
+```
+
+I comandi `dev:*` usano `node --watch` e riavviano automaticamente il server quando viene modificato `server.js`.
 
 ## Endpoint disponibili
 
@@ -195,20 +211,26 @@ Lo script:
 1. deriva il `deviceAddress` dalla `DEVICE_PRIVATE_KEY`;
 2. costruisce una misura simulata;
 3. legge il nonce corrente dallo smart contract;
-4. ottiene l'hash della misura tramite la funzione `getMeasurementHash`;
+4. calcola localmente l'hash della misura con la stessa logica dello smart contract;
 5. firma l'hash con la private key del dispositivo simulato;
 6. invia il payload firmato al middleware.
 
-Esecuzione:
+Esecuzione su Anvil:
 
 ```bash
-npm run simulate-device
+npm run simulate-device:anvil
 ```
 
 È possibile passare un valore personalizzato:
 
 ```bash
-npm run simulate-device -- 28
+npm run simulate-device:anvil -- 28
+```
+
+Esecuzione su Sepolia:
+
+```bash
+npm run simulate-device:sepolia
 ```
 
 ### Scenari negativi
@@ -218,14 +240,22 @@ Lo script `scripts/test-negative-measurements.js` esegue verifiche manuali di in
 Gli scenari coperti sono:
 
 1. richiesta con API key errata;
-2. payload alterato dopo la firma;
-3. misura valida;
-4. replay della stessa misura.
+2. valore alterato dopo la firma;
+3. timestamp alterato dopo la firma;
+4. nonce alterato dopo la firma;
+5. misura valida;
+6. replay della stessa misura.
 
-Esecuzione:
+Esecuzione su Anvil:
 
 ```bash
-npm run test-negative-measurements
+npm run test-negative-measurements:anvil
+```
+
+Esecuzione su Sepolia:
+
+```bash
+npm run test-negative-measurements:sepolia
 ```
 
 Esempio di risultati attesi:
@@ -234,17 +264,39 @@ Esempio di risultati attesi:
 Test 1 - API key sbagliata
 Status: 401
 
-Test 2 - Payload alterato dopo la firma
+Test 2 - Valore alterato dopo la firma
 Status: 400
 
-Test 3 - Misura valida
+Test 3 - Timestamp alterato dopo la firma
+Status: 400
+
+Test 4 - Nonce alterato dopo la firma
+Status: 400
+
+Test 5 - Misura valida
 Status: 201
 
-Test 4 - Replay della stessa misura
+Test 6 - Replay della stessa misura
 Status: 409
 ```
 
 Questi script non sostituiscono i test Foundry dello smart contract. I test Foundry verificano la sicurezza on-chain del contratto in isolamento, mentre gli script Node.js verificano il comportamento del middleware nel flusso applicativo.
+
+### Verifica coerenza hash
+
+Lo script `scripts/verify-hash-consistency.js` confronta l'hash calcolato localmente dal middleware con quello restituito dallo smart contract.
+
+Esecuzione su Anvil:
+
+```bash
+npm run verify-hash:anvil
+```
+
+Esecuzione su Sepolia:
+
+```bash
+npm run verify-hash:sepolia
+```
 
 ## Note di sicurezza
 
@@ -261,6 +313,6 @@ In questo modo il middleware non è il produttore fiduciario della misura: può 
 
 ## Stato attuale
 
-Il middleware è stato testato localmente con Anvil. Una misura firmata da un dispositivo simulato è stata accettata dal middleware, registrata sullo smart contract e letta correttamente dal frontend Web3.
+Il middleware è configurabile tramite profili separati per Anvil e Sepolia. Una misura firmata da un dispositivo simulato può essere inviata al middleware, registrata sullo smart contract e letta dal frontend Web3.
 
 Il firmware ESP32 attuale invia già i campi principali della misura, ma la generazione della firma crittografica deve ancora essere portata nel codice del microcontrollore. Per questo motivo, in questa fase, lo script `simulate-device.js` viene usato per simulare il comportamento finale atteso del dispositivo.

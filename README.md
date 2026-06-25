@@ -93,31 +93,11 @@ Dove:
 
 Il middleware riceve le misurazioni firmate dal dispositivo, effettua controlli preliminari e interagisce con lo smart contract tramite `ethers.js`.
 
-Il middleware:
-
-* espone `GET /health` per verificare connessione al nodo blockchain;
-* espone `POST /api/measurements` per registrare misurazioni;
-* richiede l'header `X-API-Key`;
-* valida formato del payload;
-* controlla che il dispositivo sia registrato;
-* controlla che il nonce sia maggiore dell'ultimo nonce accettato;
-* verifica off-chain che la firma sia coerente con l'address del dispositivo;
-* invia la misurazione allo smart contract usando il wallet del relayer.
+Il middleware espone API HTTP verso il dispositivo, valida le richieste prima di spendere gas e invia le transazioni usando il wallet del relayer.
 
 Questi controlli off-chain servono a evitare transazioni inutili e gas sprecato. La verifica definitiva resta nello smart contract.
 
-Il middleware usa variabili d'ambiente per la configurazione. Le principali sono:
-
-```env
-PORT=3000
-RPC_URL=http://127.0.0.1:8545
-CONTRACT_ADDRESS=0x...
-RELAYER_PRIVATE_KEY=0x...
-DEVICE_API_KEY=dev-secret-esp32-1
-CONFIRMATIONS=1
-```
-
-Per la configurazione completa e gli script disponibili vedere `middleware/README.md`.
+Il middleware supporta profili di configurazione separati per Anvil e Sepolia. Per endpoint, variabili d'ambiente e script disponibili vedere `middleware/README.md`.
 
 ### Smart contract
 
@@ -231,40 +211,11 @@ Struttura principale:
 middleware/
 ├── server.js
 ├── package.json
-├── package-lock.json
-├── .env.example
 ├── README.md
 └── scripts/
-    ├── simulate-device.js
-    └── test-negative-measurements.js
 ```
 
-Endpoint principali:
-
-```text
-GET  /health
-POST /api/measurements
-```
-
-Il payload accettato da `POST /api/measurements` deve contenere:
-
-```json
-{
-  "deviceAddress": "0x...",
-  "value": "25",
-  "deviceTimestamp": "1780000000",
-  "nonce": "1",
-  "signature": "0x..."
-}
-```
-
-Il middleware non deve inventare né modificare i dati ricevuti dal dispositivo. Deve inoltrarli allo smart contract mantenendo invariati:
-
-* indirizzo del dispositivo;
-* valore misurato;
-* timestamp del dispositivo;
-* nonce;
-* firma.
+Per endpoint, payload, configurazione e script vedere `middleware/README.md`.
 
 ### `scripts/`
 
@@ -335,42 +286,11 @@ Questo comando è utile per testare rapidamente il contratto, ma bypassa il midd
 make record-measurement VALUE=28
 ```
 
-### Misura simulata tramite middleware
+### Comandi del middleware
 
-Dalla cartella `middleware`:
+Il middleware contiene script npm separati per i profili Anvil e Sepolia. Questi script coprono avvio del server, simulazione di un dispositivo firmante, test applicativi e verifica di coerenza dell'hash.
 
-```bash
-npm run simulate-device
-```
-
-Questo comando simula un dispositivo che firma la misura e la invia al middleware. È il flusso più vicino all'integrazione finale:
-
-```text
-dispositivo simulato -> middleware -> smart contract -> frontend
-```
-
-È possibile specificare un valore diverso:
-
-```bash
-npm run simulate-device -- 28
-```
-
-### Test applicativi del middleware
-
-Dalla cartella `middleware`:
-
-```bash
-npm run test-negative-measurements
-```
-
-Lo script verifica scenari applicativi come:
-
-* API key errata;
-* payload alterato dopo la firma;
-* misura valida;
-* replay della stessa misura.
-
-Questi test non sostituiscono i test Foundry dello smart contract: servono a verificare il comportamento del middleware nel flusso applicativo.
+I dettagli operativi sono documentati in `middleware/README.md`.
 
 ## Flusso di sviluppo locale
 
@@ -382,9 +302,9 @@ Durante lo sviluppo locale, il flusso tipico è:
 3. Aprire la web app
 4. Collegare MetaMask alla rete locale Anvil
 5. Registrare un dispositivo dalla web app
-6. Configurare middleware/.env
+6. Configurare middleware/.env.anvil
 7. Avviare il middleware Node.js
-8. Inviare una misurazione firmata con npm run simulate-device
+8. Inviare una misurazione firmata tramite lo script di simulazione Anvil
 9. Leggere i dati aggiornati dalla web app
 ```
 
