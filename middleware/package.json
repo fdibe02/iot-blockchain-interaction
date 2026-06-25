@@ -5,11 +5,16 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
-    "simulate-device": "node scripts/simulate-device.js",
-    "test-negative-measurements": "node scripts/test-negative-measurements.js",
-    "verify-hash": "node scripts/verify-hash-consistency.js"
+    "start:anvil": "DOTENV_CONFIG_PATH=.env.anvil node -r dotenv/config server.js",
+    "dev:anvil": "DOTENV_CONFIG_PATH=.env.anvil node -r dotenv/config --watch server.js",
+    "start:sepolia": "DOTENV_CONFIG_PATH=.env.sepolia node -r dotenv/config server.js",
+    "dev:sepolia": "DOTENV_CONFIG_PATH=.env.sepolia node -r dotenv/config --watch server.js",
+    "simulate-device:anvil": "DOTENV_CONFIG_PATH=.env.anvil node -r dotenv/config scripts/simulate-device.js",
+    "simulate-device:sepolia": "DOTENV_CONFIG_PATH=.env.sepolia node -r dotenv/config scripts/simulate-device.js",
+    "test-negative-measurements:anvil": "DOTENV_CONFIG_PATH=.env.anvil node -r dotenv/config scripts/test-negative-measurements.js",
+    "test-negative-measurements:sepolia": "DOTENV_CONFIG_PATH=.env.sepolia node -r dotenv/config scripts/test-negative-measurements.js",
+    "verify-hash:anvil": "DOTENV_CONFIG_PATH=.env.anvil node -r dotenv/config scripts/verify-hash-consistency.js",
+    "verify-hash:sepolia": "DOTENV_CONFIG_PATH=.env.sepolia node -r dotenv/config scripts/verify-hash-consistency.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
