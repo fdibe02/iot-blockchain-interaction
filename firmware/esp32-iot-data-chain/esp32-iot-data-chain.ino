@@ -61,6 +61,22 @@ void setup() {
   timeSynchronized = synchronizeTime();  // chiedo l'orario
 
   randomSeed(analogRead(34));  // rendo casuale la simulazione della misura
+
+  Serial.println("Test buffer packed Solidity");
+
+  uint8_t packedBuffer[PACKED_BUFFER_SIZE];
+
+  bool ok = buildPackedMeasurementBuffer(packedBuffer, 25, 1700000000ULL, 1);
+
+  if (!ok) {
+    Serial.println("Errore costruzione packed buffer");
+  } else {
+    Serial.print("Packed length: ");
+    Serial.println(PACKED_BUFFER_SIZE);
+
+    Serial.print("Packed hex: 0x");
+    printHex(packedBuffer, PACKED_BUFFER_SIZE);
+  }
 }
 
 void loop() {
@@ -85,7 +101,7 @@ void loop() {
 
     // ogni volta che esp32 invia una misura, aumenta il numero progressivo
     measurementNonce++;  // così incremento anche se invio fallisce
-    sendMeasurement(measurementValue, measurementNonce);
+    // sendMeasurement(measurementValue, measurementNonce);
   }
 }
 
@@ -306,7 +322,7 @@ bool buildPackedMeasurementBuffer(uint8_t* buffer, int64_t value,
   size_t offset = 0;
 
   if (!appendAddress(buffer, offset, CONTRACT_ADDRESS)) {
-    Serialprintln("CONTRACT_ADDRESS non valido");
+    Serial.println("CONTRACT_ADDRESS non valido");
     return false;
   }
 
