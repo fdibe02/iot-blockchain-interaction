@@ -1,38 +1,30 @@
-// Test locale: costruzione packed buffer + calcolo dataHash Keccak-256
-// Nessuna connessione WiFi, nessun invio HTTP al middleware.
+// invio misura ogni 10 secondi al server Node.js
 
+#include <HTTPClient.h>
+#include <WiFi.h>
 #include <string.h>
+#include <time.h>  // funzioni per gestire l'orologio dell'ESP32 dopo sincronizzazione NTP
 
+// librerie per creare hash e firmare la misura
 extern "C" {
-#include "sha3.h"  // libreria C per calcolo hash Keccak-256
+#include "sha3.h"
 }
+#include "uECC.h"
 
 // =======================
-// CONFIGURAZIONE RETE - NON USATA IN QUESTO TEST
+// CONFIGURAZIONE WIFI
 // =======================
 
-// In questo test locale non servono WiFi, NTP o middleware.
-// Verranno riattivati nella fase successiva, quando il firmware invierà
-// la misura firmata al server Node.js.
+const char* WIFI_SSID = "iPhoneFranci";
+const char* WIFI_PASSWORD = "cicciodb";
 
-// #include <HTTPClient.h>
-// #include <WiFi.h>
-// #include <time.h>
+const char* NTP_SERVER_1 = "pool.ntp.org";
+const char* NTP_SERVER_2 = "time.nist.gov";
+const long GMT_OFFSET_SEC = 0;  // non ci interessa avere ora locale italiana
+const int DAYLIGHT_OFFSET_SEC = 0;
 
-// const char* WIFI_SSID = "INSERISCI_NOME_WIFI";
-// const char* WIFI_PASSWORD = "INSERISCI_PASSWORD_WIFI";
-
-// const char* NTP_SERVER_1 = "pool.ntp.org";
-// const char* NTP_SERVER_2 = "time.nist.gov";
-// const long GMT_OFFSET_SEC = 0;
-// const int DAYLIGHT_OFFSET_SEC = 0;
-
-// const char* SERVER_URL = "http://INSERISCI_IP_MAC:3000/api/measurements";
-// const char* DEVICE_API_KEY = "dev-secret-esp32-1";
-
-// =======================
-// CONFIGURAZIONE HASH MISURA
-// =======================
+// usa IP locale del Mac, tipo: http://192.168.1.50:3000/api/measurements
+const char* SERVER_URL = "http://172.20.10.4:3000/api/measurements";
 
 const char* CONTRACT_ADDRESS = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
 
@@ -40,12 +32,42 @@ const char* CONTRACT_ADDRESS = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
 // firmare
 const char* DEVICE_ADDRESS = "0xc2E770A8460ac16C83285225FBB175EFf65Ab186";
 
+// ATTENZIONE: per demo va bene, ma non committare mai una private key reale.
+// Meglio spostarla poi in un secrets.h ignorato da Git.
+const char* DEVICE_PRIVATE_KEY = "0xINSERISCI_PRIVATE_KEY_DEL_DEVICE";
+
 // id della chain: viene incluso nel payload per evitare firme valide su chain
 // diverse
 const uint64_t CHAIN_ID = 31337;  // Anvil
 
+// Token semplice per evitare che chiunque mandi dati al server, eventualmente
+// intasandolo. Per demo va bene, non è sicurezza "forte", è un filtro leggero
+const char* DEVICE_API_KEY = "dev-secret-esp32-1";
+
 const size_t PACKED_BUFFER_SIZE = 168;
-const size_t DATA_HASH_SIZE = 32;
+
+const size_t HASH_SIZE = 32;
+const size_t SIGNATURE_RS_SIZE = 64;
+const size_t HEX_PREFIX_SIZE = 2;
+const size_t NULL_TERMINATOR_SIZE = 1;
+
+const size_t HASH_HEX_STRING_SIZE =
+    HEX_PREFIX_SIZE + HASH_SIZE * 2 + NULL_TERMINATOR_SIZE;
+
+const size_t SIGNATURE_RS_HEX_STRING_SIZE =
+    HEX_PREFIX_SIZE + SIGNATURE_RS_SIZE * 2 + NULL_TERMINATOR_SIZE;
+
+// Ogni quanto inviare misura
+const unsigned long SEND_INTERVAL_MS = 10000;  // 10 secondi
+
+unsigned long lastSendTime = 0;
+
+// evita che misurazione valida con firma valida venga inviata più volte:
+// il contratto salverà ultimo nonce accettato e rifiuterà quelli vecchi
+uint64_t measurementNonce = 0;
+
+// memorizza l'esito della sincronizzazione NTP
+bool timeSynchronized = false;
 
 // =======================
 // SETUP
@@ -56,44 +78,206 @@ void setup() {
   delay(1000);
 
   Serial.println();
-  Serial.println("Test locale packed buffer + dataHash");
+  Serial.println("Avvio ESP32 IoT Data Chain...");
 
-  const int64_t testValue = 25;
-  const uint64_t testDeviceTimestamp = 1700000000ULL;
-  const uint64_t testNonce = 1ULL;
+  uECC_set_rng(fillRandomBytes);
+
+  connectToWiFi();  // connetto al WiFi
+
+  timeSynchronized = synchronizeTime();  // chiedo l'orario
+
+  randomSeed(analogRead(34));  // rendo casuale la simulazione della misura
+}
+
+void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnesso. Riprovo la connessione...");
+    connectToWiFi();
+
+    if (!timeSynchronized) {
+      timeSynchronized = synchronizeTime();
+    }
+  }
+
+  unsigned long currentTime = millis();  // tempo da quando la scheda è connessa
+
+  if (currentTime - lastSendTime >= SEND_INTERVAL_MS) {
+    lastSendTime = currentTime;
+
+    int measurementValue = readMeasurement();
+
+    Serial.println("Misura letta: ");
+    Serial.println(measurementValue);
+
+    // Ogni volta che ESP32 invia una misura, aumenta il numero progressivo.
+    measurementNonce++;
+    sendMeasurement(measurementValue, measurementNonce);
+  }
+}
+
+// =======================
+// CONNESSIONE WIFI
+// =======================
+
+void connectToWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  Serial.println("Connessione a WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println();
+  Serial.println("WiFi connesso!");
+  Serial.println("IP ESP32: ");
+  Serial.println(WiFi.localIP());
+}
+
+// =======================
+// SINCRONIZZAZIONE ORARIO
+// =======================
+
+bool synchronizeTime() {
+  Serial.println("Sincronizzazione ora via NTP...");
+
+  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER_1, NTP_SERVER_2);
+
+  struct tm timeinfo;
+
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Errore: NTP non sincronizzato.");
+    return false;
+  }
+
+  Serial.println("Ora sincronizzata tramite NTP.");
+  return true;
+}
+
+// =======================
+// LOGICA TIMESTAMP
+// =======================
+
+// Torna un timestamp Unix reale se NTP è disponibile.
+// Se NTP non è disponibile, usa millis() / 1000 solo come fallback demo.
+uint64_t getDeviceTimestamp() {
+  if (!timeSynchronized) {
+    Serial.println("Ora non sincronizzata, uso millis() come fallback demo.");
+    return millis() / 1000;
+  }
+
+  return (uint64_t)time(nullptr);
+}
+
+// =======================
+// LETTURA MISURAZIONE
+// =======================
+
+int readMeasurement() {
+  // Versione demo: genera valori casuali tra 20 e 30 compresi.
+  // Esempio: temperatura simulata in gradi Celsius.
+  int simulatedValue = random(20, 31);
+
+  return simulatedValue;
+}
+
+// =======================
+// INVIO AL SERVER NODE.JS
+// =======================
+
+void sendMeasurement(int value, uint64_t nonce) {
+  HTTPClient http;
+
+  Serial.println("Invio POST a: ");
+  Serial.println(SERVER_URL);
+
+  uint64_t deviceTimestamp = getDeviceTimestamp();
 
   uint8_t packedBuffer[PACKED_BUFFER_SIZE];
 
-  bool ok = buildPackedMeasurementBuffer(packedBuffer, testValue,
-                                         testDeviceTimestamp, testNonce);
-
-  if (!ok) {
+  if (!buildPackedMeasurementBuffer(packedBuffer, value, deviceTimestamp,
+                                    nonce)) {
     Serial.println("Errore costruzione packed buffer");
     return;
   }
 
-  Serial.print("Packed length: ");
-  Serial.println(PACKED_BUFFER_SIZE);
+  uint8_t dataHash[HASH_SIZE];
 
-  Serial.print("Packed hex: 0x");
-  printHex(packedBuffer, PACKED_BUFFER_SIZE);
-
-  uint8_t dataHash[DATA_HASH_SIZE];
-
-  bool hashOk = computeDataHashFromPackedBuffer(packedBuffer, dataHash);
-
-  if (!hashOk) {
-    Serial.println("Errore calcolo dataHash");
+  if (!keccak256Buffer(packedBuffer, PACKED_BUFFER_SIZE, dataHash)) {
+    Serial.println("Errore calcolo Keccak-256 del packed buffer");
     return;
   }
 
-  Serial.print("Data hash: 0x");
-  printHex(dataHash, DATA_HASH_SIZE);
-}
+  char dataHashHex[HASH_HEX_STRING_SIZE];
+  bytesToHexString(dataHash, HASH_SIZE, dataHashHex);
 
-void loop() {
-  // Test locale statico:
-  // nessuna misura periodica, nessun WiFi, nessun invio HTTP.
+  Serial.print("Data hash: ");
+  Serial.println(dataHashHex);
+
+  uint8_t signatureRs[SIGNATURE_RS_SIZE];
+
+  if (!signDataHash(dataHash, signatureRs)) {
+    Serial.println("Errore firma dataHash");
+    return;
+  }
+
+  char signatureHex[SIGNATURE_RS_HEX_STRING_SIZE];
+  bytesToHexString(signatureRs, SIGNATURE_RS_SIZE, signatureHex);
+
+  Serial.print("Signature r||s: ");
+  Serial.println(signatureHex);
+
+  if (!http.begin(SERVER_URL)) {
+    Serial.println("Errore inizializzazione HTTP.");
+    return;
+  }
+
+  // costruisco Header della POST
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Device-Address", DEVICE_ADDRESS);
+  http.addHeader("X-API-Key", DEVICE_API_KEY);
+
+  // costruisco il body della POST
+  String body = "{";
+  body += "\"deviceAddress\":\"";
+  body += DEVICE_ADDRESS;
+  body += "\",";
+  body += "\"value\":\"";
+  body += String(value);
+  body += "\",";
+  body += "\"deviceTimestamp\":\"";
+  body += String(deviceTimestamp);
+  body += "\",";
+  body += "\"nonce\":\"";
+  body += String(nonce);
+  body += "\",";
+  body += "\"signature\":\"";
+  body += signatureHex;
+  body += "\"";
+  body += "}";
+
+  Serial.print("Body JSON: ");
+  Serial.println(body);
+
+  // invio la POST
+  int statusCode = http.POST(body);
+
+  Serial.print("HTTP status code: ");
+  Serial.println(statusCode);
+
+  if (statusCode > 0) {
+    String response = http.getString();
+
+    Serial.print("Risposta server: ");
+    Serial.println(response);
+  } else {
+    Serial.print("Errore HTTP: ");
+    Serial.println(http.errorToString(statusCode));
+  }
+
+  http.end();  // chiude la connessione
 }
 
 // =======================
@@ -202,30 +386,101 @@ bool buildPackedMeasurementBuffer(uint8_t* buffer, int64_t value,
   return offset == PACKED_BUFFER_SIZE;
 }
 
-// Calcola Keccak-256 del buffer packed già costruito.
-// Questa funzione NON ricostruisce il packedBuffer.
-bool computeDataHashFromPackedBuffer(const uint8_t* packedBuffer,
-                                     uint8_t* dataHash) {
-  sha3_return_t result =
-      sha3_HashBuffer(256, SHA3_FLAGS_KECCAK, packedBuffer, PACKED_BUFFER_SIZE,
-                      dataHash, DATA_HASH_SIZE);
+// =======================
+// FUNZIONI CRYPTO: KECCAK-256 + FIRMA ECDSA SECP256K1
+// =======================
 
-  if (result != SHA3_RETURN_OK) {
-    Serial.println("Errore calcolo Keccak-256");
+int fillRandomBytes(uint8_t* dest, unsigned size) {
+  for (unsigned i = 0; i < size; i++) {
+    dest[i] = (uint8_t)(esp_random() & 0xff);
+  }
+
+  return 1;
+}
+
+bool keccak256Buffer(const uint8_t* input, size_t inputLength,
+                     uint8_t* outputHash) {
+  sha3_return_t result = sha3_HashBuffer(256, SHA3_FLAGS_KECCAK, input,
+                                         inputLength, outputHash, HASH_SIZE);
+
+  return result == SHA3_RETURN_OK;
+}
+
+bool hexStringToBytes(const char* hexString, uint8_t* output,
+                      size_t expectedBytes) {
+  size_t expectedLength = 2 + expectedBytes * 2;
+
+  if (strlen(hexString) != expectedLength) {
     return false;
+  }
+
+  if (hexString[0] != '0' || (hexString[1] != 'x' && hexString[1] != 'X')) {
+    return false;
+  }
+
+  for (size_t i = 0; i < expectedBytes; i++) {
+    int high = hexValue(hexString[2 + i * 2]);
+    int low = hexValue(hexString[3 + i * 2]);
+
+    if (high < 0 || low < 0) {
+      return false;
+    }
+
+    output[i] = (uint8_t)((high << 4) | low);
   }
 
   return true;
 }
 
-// stampo il buffer in esadecimale leggibile
-void printHex(const uint8_t* buffer, size_t length) {
+void bytesToHexString(const uint8_t* input, size_t inputLength, char* output) {
   const char* hex = "0123456789abcdef";
 
-  for (size_t i = 0; i < length; i++) {
-    Serial.print(hex[buffer[i] >> 4]);
-    Serial.print(hex[buffer[i] & 0x0f]);
+  output[0] = '0';
+  output[1] = 'x';
+
+  for (size_t i = 0; i < inputLength; i++) {
+    output[2 + i * 2] = hex[input[i] >> 4];
+    output[3 + i * 2] = hex[input[i] & 0x0f];
   }
 
-  Serial.println();
+  output[2 + inputLength * 2] = '\0';
+}
+
+bool buildEthereumSignedMessageHash(const uint8_t* dataHash,
+                                    uint8_t* ethSignedMessageHash) {
+  const uint8_t prefix[] = {0x19, 'E', 't', 'h', 'e', 'r',  'e', 'u', 'm', ' ',
+                            'S',  'i', 'g', 'n', 'e', 'd',  ' ', 'M', 'e', 's',
+                            's',  'a', 'g', 'e', ':', '\n', '3', '2'};
+
+  const size_t prefixLength = sizeof(prefix);
+  uint8_t message[prefixLength + HASH_SIZE];
+
+  memcpy(message, prefix, prefixLength);
+  memcpy(message + prefixLength, dataHash, HASH_SIZE);
+
+  return keccak256Buffer(message, prefixLength + HASH_SIZE,
+                         ethSignedMessageHash);
+}
+
+bool signDataHash(const uint8_t* dataHash, uint8_t* signatureRs) {
+  uint8_t privateKey[32];
+
+  if (!hexStringToBytes(DEVICE_PRIVATE_KEY, privateKey, sizeof(privateKey))) {
+    Serial.println("DEVICE_PRIVATE_KEY non valida");
+    return false;
+  }
+
+  uint8_t ethSignedMessageHash[HASH_SIZE];
+
+  if (!buildEthereumSignedMessageHash(dataHash, ethSignedMessageHash)) {
+    Serial.println("Errore calcolo Ethereum Signed Message hash");
+    return false;
+  }
+
+  uECC_Curve curve = uECC_secp256k1();
+
+  int result = uECC_sign(privateKey, ethSignedMessageHash, HASH_SIZE,
+                         signatureRs, curve);
+
+  return result == 1;
 }
