@@ -11,6 +11,15 @@ const RELAYER_PRIVATE_KEY = process.env.RELAYER_PRIVATE_KEY;
 const DEVICE_API_KEY = process.env.DEVICE_API_KEY;
 const CONFIRMATIONS = Number(process.env.CONFIRMATIONS ?? 1);
 
+// per normalizzare la parte s della signature
+const SECP256K1_N =
+    0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+
+const SECP256K1_HALF_N = SECP256K1_N / 2n;
+
+const UINT256_MASK =
+    0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn;
+
 const IOT_DATA_STORAGE_ABI = [
     "function getDevice(address deviceAddress) view returns (tuple(bool isRegistered, string metadataURI, uint256 registeredAt))",
     "function getLastNonce(address deviceAddress) view returns (uint256)",
@@ -92,7 +101,7 @@ async function recordMeasurement(req, res, next) {
         // Calcolo locale dell'hash, senza chiamare getMeasurementHash sul contratto.
         const dataHash = await getMeasurementHashLocal(measurement);
 
-        assertSignatureMatchesDevice(
+        const signatureForContract = normalizeSignatureForContract(
             dataHash,
             measurement.signature,
             measurement.deviceAddress
@@ -104,7 +113,7 @@ async function recordMeasurement(req, res, next) {
             measurement.value,
             measurement.deviceTimestamp,
             measurement.nonce,
-            measurement.signature
+            signatureForContract
         );
 
         const receipt = await transactionResponse.wait(CONFIRMATIONS);
@@ -158,8 +167,10 @@ function parseMeasurementRequest(req) {
         throw new HttpError(400, "signature deve essere una stringa esadecimale");
     }
 
-    if (ethers.dataLength(signature) !== 65) {
-        throw new HttpError(400, "signature deve essere lunga 65 byte");
+    const signatureLength = ethers.dataLength(signature);
+
+    if (signatureLength !== 64 && signatureLength !== 65) {
+        throw new HttpError(400, "signature deve essere lunga 64 o 65 byte");
     }
 
     const parsedValue = BigInt(value);
@@ -232,10 +243,122 @@ async function assertNonceIsFresh(deviceAddress, nonce) {
     }
 }
 
+function normalizeSignatureForContract(dataHash, signature, deviceAddress) {
+    const signatureLength = ethers.dataLength(signature);
+
+    if (signatureLength === 65) {
+        const normalizedSignature = normalize65ByteSignature(signature);
+
+        assertSignatureMatchesDevice(
+            dataHash,
+            normalizedSignature,
+            deviceAddress,
+        );
+
+        return normalizedSignature;
+    }
+
+    if (signatureLength === 64) {
+        return buildRecoverableSignatureFromRawRs(
+            dataHash,
+            signature,
+            deviceAddress,
+        );
+    }
+
+    throw new HttpError(400, "signature deve essere lunga 64 o 65 byte");
+}
+
+function normalize65ByteSignature(signature) {
+    const signatureBytes = ethers.getBytes(signature);
+
+    let v = signatureBytes[64];
+
+    if (v === 0 || v === 1) {
+        v += 27;
+    }
+
+    if (v !== 27 && v !== 28) {
+        throw new HttpError(400, "Valore v della firma non valido");
+    }
+
+    const s = bytesToBigInt(signatureBytes.slice(32, 64));
+
+    if (s > SECP256K1_HALF_N) {
+        throw new HttpError(400, "Firma non valida: valore s non canonico");
+    }
+
+    signatureBytes[64] = v;
+
+    return ethers.hexlify(signatureBytes);
+}
+
+function buildRecoverableSignatureFromRawRs(dataHash, rawSignature, deviceAddress) {
+    const signatureBytes = ethers.getBytes(rawSignature);
+
+    const rBytes = signatureBytes.slice(0, 32);
+    const sBytes = signatureBytes.slice(32, 64);
+
+    const r = ethers.hexlify(rBytes);
+    const rawS = bytesToBigInt(sBytes);
+
+    if (rawS <= 0n || rawS >= SECP256K1_N) {
+        throw new HttpError(400, "Valore s della firma non valido");
+    }
+
+    const candidateSValues = buildCandidateSValues(rawS);
+
+    for (const candidateS of candidateSValues) {
+        if (candidateS > SECP256K1_HALF_N) {
+            continue;
+        }
+
+        const s = uint256ToHex(candidateS);
+
+        for (const v of [27, 28]) {
+            const candidateSignature = joinSignatureParts(r, s, v);
+
+            try {
+                const recoveredAddress = ethers.verifyMessage(
+                    ethers.getBytes(dataHash),
+                    candidateSignature,
+                );
+
+                if (
+                    ethers.getAddress(recoveredAddress) ===
+                    ethers.getAddress(deviceAddress)
+                ) {
+                    return candidateSignature;
+                }
+            } catch {
+                // Provo la prossima combinazione r, s, v.
+            }
+        }
+    }
+
+    throw new HttpError(400, "Firma non coerente con il deviceAddress");
+}
+
+function buildCandidateSValues(rawS) {
+    const normalizedS = rawS > SECP256K1_HALF_N ? SECP256K1_N - rawS : rawS;
+
+    if (normalizedS === rawS) {
+        return [rawS];
+    }
+
+    return [normalizedS, rawS];
+}
+
+function joinSignatureParts(r, s, v) {
+    const vHex = v.toString(16).padStart(2, "0");
+
+    return `0x${r.slice(2)}${s.slice(2)}${vHex}`;
+}
+
 function assertSignatureMatchesDevice(dataHash, signature, deviceAddress) {
     const recoveredAddress = recoverAddress(dataHash, signature);
 
-    if (recoveredAddress.toLowerCase() !== deviceAddress.toLowerCase()) {
+    if (ethers.getAddress(recoveredAddress) !== ethers.getAddress(deviceAddress)) {
         throw new HttpError(400, "Firma non coerente con il deviceAddress");
     }
 }
@@ -246,6 +369,14 @@ function recoverAddress(dataHash, signature) {
     } catch {
         throw new HttpError(400, "Firma non valida");
     }
+}
+
+function bytesToBigInt(bytes) {
+    return BigInt(ethers.hexlify(bytes));
+}
+
+function uint256ToHex(value) {
+    return `0x${value.toString(16).padStart(64, "0")}`;
 }
 
 function validateEnvironment() {
