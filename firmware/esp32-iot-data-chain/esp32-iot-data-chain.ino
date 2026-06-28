@@ -2,14 +2,18 @@
 
 #include <HTTPClient.h>
 #include <WiFi.h>
-#include <time.h>  // funzioni per gestire l'orologio dell'ESP32 dop sincronizzazone NTP
+#include <time.h>  // funzioni per gestire l'orologio dell'ESP32 dopo sincronizzazione NTP
+
+extern "C" {
+#include "sha3.h"  // libreria C per calcolo hash Keccak-256
+}
 
 // =======================
 // CONFIGURAZIONE WIFI
 // =======================
 
-const char* WIFI_SSID = "iPhoneFranci";
-const char* WIFI_PASSWORD = "cicciodb";
+const char* WIFI_SSID = "INSERISCI_NOME_WIFI";
+const char* WIFI_PASSWORD = "INSERISCI_PASSWORD_WIFI";
 
 const char* NTP_SERVER_1 = "pool.ntp.org";
 const char* NTP_SERVER_2 = "time.nist.gov";
@@ -17,7 +21,7 @@ const long GMT_OFFSET_SEC = 0;  // non ci interessa avere ora locale italiana
 const int DAYLIGHT_OFFSET_SEC = 0;
 
 // usa IP locale del Mac, tipo: http://192.168.1.50:3000/api/measurements
-const char* SERVER_URL = "http://172.20.10.4:3000/api/measurements";
+const char* SERVER_URL = "http://INSERISCI_IP_MAC:3000/api/measurements";
 
 const char* CONTRACT_ADDRESS = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
 
@@ -25,14 +29,15 @@ const char* CONTRACT_ADDRESS = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
 // firmare
 const char* DEVICE_ADDRESS = "0xc2E770A8460ac16C83285225FBB175EFf65Ab186";
 
-// id della chain, seve anche questo per firmare messaggio
-const uint64_t CHAIN_ID = 31337;  // se usiamo anvil
+// id della chain, serve anche questo per calcolare l'hash della misura
+const uint64_t CHAIN_ID = 31337;  // Anvil
 
 // Token semplice per evitare che chiunque mandi dati al server, eventualmente
 // intasandolo. Per demo va bene, non è sicurezza "forte", è un filtro leggero
 const char* DEVICE_API_KEY = "dev-secret-esp32-1";
 
 const size_t PACKED_BUFFER_SIZE = 168;
+const size_t DATA_HASH_SIZE = 32;
 
 // Ogni quanto inviare misura
 const unsigned long SEND_INTERVAL_MS = 10000;  // 10 secondi
@@ -40,11 +45,12 @@ const unsigned long SEND_INTERVAL_MS = 10000;  // 10 secondi
 unsigned long lastSendTime = 0;
 
 // evita che misurazione valida con firma valida venga inviata più volte:
-// contratto salverà ultimo nonce accettato e rifiuta quelli vecchi
+// il contratto salverà ultimo nonce accettato e rifiuterà quelli vecchi
 uint64_t measurementNonce = 0;
 
-// mmemorizza l'esito della sincronizzazione NTP
+// memorizza l'esito della sincronizzazione NTP
 bool timeSynchronized = false;
+
 // =======================
 // SETUP
 // =======================
@@ -56,27 +62,45 @@ void setup() {
   Serial.println();
   Serial.println("Avvio ESP32 IoT Data Chain...");
 
-  connectToWiFi();  // connetto al wifi
+  connectToWiFi();  // connetto al WiFi
 
   timeSynchronized = synchronizeTime();  // chiedo l'orario
 
   randomSeed(analogRead(34));  // rendo casuale la simulazione della misura
 
-  Serial.println("Test buffer packed Solidity");
+  Serial.println("Test buffer packed Solidity + dataHash");
+
+  const int64_t testValue = 25;
+  const uint64_t testDeviceTimestamp = 1700000000ULL;
+  const uint64_t testNonce = 1ULL;
 
   uint8_t packedBuffer[PACKED_BUFFER_SIZE];
 
-  bool ok = buildPackedMeasurementBuffer(packedBuffer, 25, 1700000000ULL, 1);
+  bool ok = buildPackedMeasurementBuffer(packedBuffer, testValue,
+                                         testDeviceTimestamp, testNonce);
 
   if (!ok) {
     Serial.println("Errore costruzione packed buffer");
-  } else {
-    Serial.print("Packed length: ");
-    Serial.println(PACKED_BUFFER_SIZE);
-
-    Serial.print("Packed hex: 0x");
-    printHex(packedBuffer, PACKED_BUFFER_SIZE);
+    return;
   }
+
+  Serial.print("Packed length: ");
+  Serial.println(PACKED_BUFFER_SIZE);
+
+  Serial.print("Packed hex: 0x");
+  printHex(packedBuffer, PACKED_BUFFER_SIZE);
+
+  uint8_t dataHash[DATA_HASH_SIZE];
+
+  bool hashOk = computeDataHashFromPackedBuffer(packedBuffer, dataHash);
+
+  if (!hashOk) {
+    Serial.println("Errore calcolo dataHash");
+    return;
+  }
+
+  Serial.print("Data hash: 0x");
+  printHex(dataHash, DATA_HASH_SIZE);
 }
 
 void loop() {
@@ -99,8 +123,11 @@ void loop() {
     Serial.println("Misura letta: ");
     Serial.println(measurementValue);
 
-    // ogni volta che esp32 invia una misura, aumenta il numero progressivo
-    measurementNonce++;  // così incremento anche se invio fallisce
+    // Ogni volta che ESP32 invia una misura, aumenta il numero progressivo.
+    // In questa fase l'invio è ancora disattivato: stiamo solo testando
+    // dataHash.
+    measurementNonce++;
+
     // sendMeasurement(measurementValue, measurementNonce);
   }
 }
@@ -164,9 +191,10 @@ uint64_t getDeviceTimestamp() {
 // =======================
 // LETTURA MISURAZIONE
 // =======================
+
 int readMeasurement() {
-  // Versione demo: genera valori casuali tra 20 e 30 compresi
-  // Esempio: temperatura simulata in gradi Celsius
+  // Versione demo: genera valori casuali tra 20 e 30 compresi.
+  // Esempio: temperatura simulata in gradi Celsius.
   int simulatedValue = random(20, 31);
 
   return simulatedValue;
@@ -175,6 +203,7 @@ int readMeasurement() {
 // =======================
 // INVIO AL SERVER NODE.JS
 // =======================
+
 void sendMeasurement(int value, uint64_t nonce) {
   HTTPClient http;
 
@@ -250,7 +279,7 @@ int hexValue(char c) {
   return -1;
 }
 
-// converto Address esadecimale in binario
+// converto address esadecimale in binario
 bool appendAddress(uint8_t* buffer, size_t& offset, const char* address) {
   if (strlen(address) != 42) {
     return false;
@@ -260,34 +289,30 @@ bool appendAddress(uint8_t* buffer, size_t& offset, const char* address) {
     return false;
   }
 
-  for (int i = 0; i < 20; i++) {  // un giro di ciclo per ogni byte dell'address
+  for (int i = 0; i < 20; i++) {
     int high = hexValue(address[2 + i * 2]);
     int low = hexValue(address[3 + i * 2]);
 
-    if (high < 0 || low < 0) {  // verifico che siano cifre esadecimali valide
+    if (high < 0 || low < 0) {
       return false;
     }
 
-    buffer[offset] =
-        (uint8_t)((high << 4) |
-                  low);  // "5b" -> 0x5b -> 91, ovvero sposta di 4 bit la cifra
-                         // high e fai OR bit a bit con la cifra low
-    offset++;  // in ogni posizione del buffer salvo unvalore a 8 bit (1 byte),
-               // che deriva da una coppia di cifre esadecimali
+    // Due caratteri hex, ad esempio "5b", diventano un byte: 0x5b.
+    buffer[offset] = (uint8_t)((high << 4) | low);
+    offset++;
   }
 
   return true;
 }
 
-// converto i numeri uint64_t in 32 byte, compatibili quindi con gli uint256
-// di Solidity
+// converto un uint64_t in 32 byte compatibili con uint256 Solidity
 void appendUint256(uint8_t* buffer, size_t& offset, uint64_t value) {
-  // metto 32 byte a zero (inizializzo il buffer)
+  // metto 32 byte a zero
   for (int i = 0; i < 32; i++) {
     buffer[offset + i] = 0;
   }
 
-  // Scrivo il valore negli ultimi 8 byte, in big-endian
+  // scrivo il valore negli ultimi 8 byte, in big-endian
   for (int i = 31; i >= 24; i--) {
     buffer[offset + i] = value & 0xff;
     value >>= 8;
@@ -296,11 +321,11 @@ void appendUint256(uint8_t* buffer, size_t& offset, uint64_t value) {
   offset += 32;
 }
 
+// converto un int64_t in 32 byte compatibili con int256 Solidity
 void appendInt256(uint8_t* buffer, size_t& offset, int64_t value) {
-  // se il numero è negativo, Solidity usa complemento a due:
-  // i byte iniziali deono essere 0xff.
-  // se è positivo, i byte iniziali sono 0x00
-
+  // Se il numero è negativo, Solidity usa complemento a due:
+  // i byte iniziali devono essere 0xff.
+  // Se è positivo, i byte iniziali sono 0x00.
   uint8_t fillByte = value < 0 ? 0xff : 0x00;
 
   for (int i = 0; i < 32; i++) {
@@ -338,6 +363,22 @@ bool buildPackedMeasurementBuffer(uint8_t* buffer, int64_t value,
   appendUint256(buffer, offset, nonce);
 
   return offset == PACKED_BUFFER_SIZE;
+}
+
+// Calcola Keccak-256 del buffer packed già costruito.
+// Questa funzione NON ricostruisce il packedBuffer.
+bool computeDataHashFromPackedBuffer(const uint8_t* packedBuffer,
+                                     uint8_t* dataHash) {
+  sha3_return_t result =
+      sha3_HashBuffer(256, SHA3_FLAGS_KECCAK, packedBuffer, PACKED_BUFFER_SIZE,
+                      dataHash, DATA_HASH_SIZE);
+
+  if (result != SHA3_RETURN_OK) {
+    Serial.println("Errore calcolo Keccak-256");
+    return false;
+  }
+
+  return true;
 }
 
 // stampo il buffer in esadecimale leggibile

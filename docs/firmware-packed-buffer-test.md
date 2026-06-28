@@ -1,8 +1,19 @@
-# Firmware test packed buffer
+# Firmware test packed buffer + dataHash
 
-Versione temporanea del firmware usata per verificare la costruzione del buffer binario compatibile con `abi.encodePacked(...)`.
+Versione temporanea del firmware usata per verificare:
+
+1. la costruzione del buffer binario compatibile con `abi.encodePacked(...)`;
+2. il calcolo del `dataHash` tramite Keccak-256 sul buffer packed.
+
+In questa fase non viene ancora generata la firma ECDSA e non viene inviato nulla al middleware.
 
 ## Parti aggiunte/modificate
+
+```cpp
+extern "C" {
+#include "sha3.h"  // libreria C per calcolo hash Keccak-256
+}
+```
 
 ```cpp
 const char* CONTRACT_ADDRESS = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
@@ -12,9 +23,10 @@ const char* DEVICE_ADDRESS = "0xc2E770A8460ac16C83285225FBB175EFf65Ab186";
 const uint64_t CHAIN_ID = 31337;  // Anvil
 
 const size_t PACKED_BUFFER_SIZE = 168;
+const size_t DATA_HASH_SIZE = 32;
 ```
 
-## Test temporaneo in setup()
+## Test temporaneo in `setup()`
 
 ```cpp
 void setup() {
@@ -30,21 +42,42 @@ void setup() {
 
   randomSeed(analogRead(34));
 
-  Serial.println("Test buffer packed Solidity");
+  Serial.println("Test buffer packed Solidity + dataHash");
+
+  const int64_t testValue = 25;
+  const uint64_t testDeviceTimestamp = 1700000000ULL;
+  const uint64_t testNonce = 1ULL;
 
   uint8_t packedBuffer[PACKED_BUFFER_SIZE];
 
-  bool ok = buildPackedMeasurementBuffer(packedBuffer, 25, 1700000000ULL, 1);
+  bool ok = buildPackedMeasurementBuffer(
+      packedBuffer,
+      testValue,
+      testDeviceTimestamp,
+      testNonce);
 
   if (!ok) {
     Serial.println("Errore costruzione packed buffer");
-  } else {
-    Serial.print("Packed length: ");
-    Serial.println(PACKED_BUFFER_SIZE);
-
-    Serial.print("Packed hex: 0x");
-    printHex(packedBuffer, PACKED_BUFFER_SIZE);
+    return;
   }
+
+  Serial.print("Packed length: ");
+  Serial.println(PACKED_BUFFER_SIZE);
+
+  Serial.print("Packed hex: 0x");
+  printHex(packedBuffer, PACKED_BUFFER_SIZE);
+
+  uint8_t dataHash[DATA_HASH_SIZE];
+
+  bool hashOk = computeDataHashFromPackedBuffer(packedBuffer, dataHash);
+
+  if (!hashOk) {
+    Serial.println("Errore calcolo dataHash");
+    return;
+  }
+
+  Serial.print("Data hash: 0x");
+  printHex(dataHash, DATA_HASH_SIZE);
 }
 ```
 
@@ -72,7 +105,9 @@ int hexValue(char c) {
 
   return -1;
 }
+```
 
+```cpp
 bool appendAddress(uint8_t* buffer, size_t& offset, const char* address) {
   if (strlen(address) != 42) {
     return false;
@@ -96,7 +131,9 @@ bool appendAddress(uint8_t* buffer, size_t& offset, const char* address) {
 
   return true;
 }
+```
 
+```cpp
 void appendUint256(uint8_t* buffer, size_t& offset, uint64_t value) {
   for (int i = 0; i < 32; i++) {
     buffer[offset + i] = 0;
@@ -109,7 +146,9 @@ void appendUint256(uint8_t* buffer, size_t& offset, uint64_t value) {
 
   offset += 32;
 }
+```
 
+```cpp
 void appendInt256(uint8_t* buffer, size_t& offset, int64_t value) {
   uint8_t fillByte = value < 0 ? 0xff : 0x00;
 
@@ -126,7 +165,9 @@ void appendInt256(uint8_t* buffer, size_t& offset, int64_t value) {
 
   offset += 32;
 }
+```
 
+```cpp
 bool buildPackedMeasurementBuffer(
     uint8_t* buffer,
     int64_t value,
@@ -152,7 +193,31 @@ bool buildPackedMeasurementBuffer(
 
   return offset == PACKED_BUFFER_SIZE;
 }
+```
 
+## Funzione aggiunta per calcolo `dataHash`
+
+Il `dataHash` viene calcolato facendo Keccak-256 del buffer packed già costruito.
+
+```cpp
+bool computeDataHashFromPackedBuffer(const uint8_t* packedBuffer,
+                                     uint8_t* dataHash) {
+  sha3_return_t result =
+      sha3_HashBuffer(256, SHA3_FLAGS_KECCAK, packedBuffer, PACKED_BUFFER_SIZE,
+                      dataHash, DATA_HASH_SIZE);
+
+  if (result != SHA3_RETURN_OK) {
+    Serial.println("Errore calcolo Keccak-256");
+    return false;
+  }
+
+  return true;
+}
+```
+
+## Funzione di stampa esadecimale
+
+```cpp
 void printHex(const uint8_t* buffer, size_t length) {
   const char* hex = "0123456789abcdef";
 
@@ -164,3 +229,25 @@ void printHex(const uint8_t* buffer, size_t length) {
   Serial.println();
 }
 ```
+
+## Output atteso del test
+
+Con i valori fissi:
+
+```cpp
+value = 25;
+deviceTimestamp = 1700000000ULL;
+nonce = 1ULL;
+```
+
+il firmware deve stampare:
+
+```text
+Packed length: 168
+Packed hex: 0x5fbdb2315678afecb367f032d93f642f64180aa30000000000000000000000000000000000000000000000000000000000007a69c2e770a8460ac16c83285225fbb175eff65ab1860000000000000000000000000000000000000000000000000000000000000019000000000000000000000000000000000000000000000000000000006553f1000000000000000000000000000000000000000000000000000000000000000001
+Data hash: 0x0290701a94d70439ce77507be8ee982615cd35cf32a9332ba96602d99e690fad
+```
+
+Il `Packed hex` è stato confrontato con lo script Node.js basato su `ethers.solidityPacked(...)`.
+
+Il `Data hash` è stato confrontato con lo script Node.js basato su `ethers.keccak256(packed)` / `ethers.solidityPackedKeccak256(...)`.
