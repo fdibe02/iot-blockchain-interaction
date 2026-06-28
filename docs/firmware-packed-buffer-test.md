@@ -1,11 +1,33 @@
 # Firmware test packed buffer + dataHash
 
-Versione temporanea del firmware usata per verificare:
+Versione temporanea del firmware usata per verificare localmente:
 
 1. la costruzione del buffer binario compatibile con `abi.encodePacked(...)`;
 2. il calcolo del `dataHash` tramite Keccak-256 sul buffer packed.
 
 In questa fase non viene ancora generata la firma ECDSA e non viene inviato nulla al middleware.
+
+## Parti di rete commentate
+
+Per questo test non servono WiFi, NTP o invio HTTP al middleware.
+La parte di rete è quindi lasciata commentata nel firmware.
+
+```cpp
+// #include <HTTPClient.h>
+// #include <WiFi.h>
+// #include <time.h>
+
+// const char* WIFI_SSID = "INSERISCI_NOME_WIFI";
+// const char* WIFI_PASSWORD = "INSERISCI_PASSWORD_WIFI";
+
+// const char* NTP_SERVER_1 = "pool.ntp.org";
+// const char* NTP_SERVER_2 = "time.nist.gov";
+// const long GMT_OFFSET_SEC = 0;
+// const int DAYLIGHT_OFFSET_SEC = 0;
+
+// const char* SERVER_URL = "http://INSERISCI_IP_MAC:3000/api/measurements";
+// const char* DEVICE_API_KEY = "dev-secret-esp32-1";
+```
 
 ## Parti aggiunte/modificate
 
@@ -34,15 +56,7 @@ void setup() {
   delay(1000);
 
   Serial.println();
-  Serial.println("Avvio ESP32 IoT Data Chain...");
-
-  connectToWiFi();
-
-  timeSynchronized = synchronizeTime();
-
-  randomSeed(analogRead(34));
-
-  Serial.println("Test buffer packed Solidity + dataHash");
+  Serial.println("Test locale packed buffer + dataHash");
 
   const int64_t testValue = 25;
   const uint64_t testDeviceTimestamp = 1700000000ULL;
@@ -79,12 +93,11 @@ void setup() {
   Serial.print("Data hash: 0x");
   printHex(dataHash, DATA_HASH_SIZE);
 }
-```
 
-In questa versione l’invio al middleware è stato disattivato temporaneamente:
-
-```cpp
-// sendMeasurement(measurementValue, measurementNonce);
+void loop() {
+  // Test locale statico:
+  // nessuna misura periodica, nessun WiFi, nessun invio HTTP.
+}
 ```
 
 ## Funzioni aggiunte per costruzione packed buffer
@@ -247,7 +260,3 @@ Packed length: 168
 Packed hex: 0x5fbdb2315678afecb367f032d93f642f64180aa30000000000000000000000000000000000000000000000000000000000007a69c2e770a8460ac16c83285225fbb175eff65ab1860000000000000000000000000000000000000000000000000000000000000019000000000000000000000000000000000000000000000000000000006553f1000000000000000000000000000000000000000000000000000000000000000001
 Data hash: 0x0290701a94d70439ce77507be8ee982615cd35cf32a9332ba96602d99e690fad
 ```
-
-Il `Packed hex` è stato confrontato con lo script Node.js basato su `ethers.solidityPacked(...)`.
-
-Il `Data hash` è stato confrontato con lo script Node.js basato su `ethers.keccak256(packed)` / `ethers.solidityPackedKeccak256(...)`.
