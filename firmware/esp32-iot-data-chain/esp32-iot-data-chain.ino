@@ -1,27 +1,38 @@
-// invio misura ogni 10 secondi al server Node.js
+// Test locale: costruzione packed buffer + calcolo dataHash Keccak-256
+// Nessuna connessione WiFi, nessun invio HTTP al middleware.
 
-#include <HTTPClient.h>
-#include <WiFi.h>
-#include <time.h>  // funzioni per gestire l'orologio dell'ESP32 dopo sincronizzazione NTP
+#include <string.h>
 
 extern "C" {
 #include "sha3.h"  // libreria C per calcolo hash Keccak-256
 }
 
 // =======================
-// CONFIGURAZIONE WIFI
+// CONFIGURAZIONE RETE - NON USATA IN QUESTO TEST
 // =======================
 
-const char* WIFI_SSID = "INSERISCI_NOME_WIFI";
-const char* WIFI_PASSWORD = "INSERISCI_PASSWORD_WIFI";
+// In questo test locale non servono WiFi, NTP o middleware.
+// Verranno riattivati nella fase successiva, quando il firmware invierà
+// la misura firmata al server Node.js.
 
-const char* NTP_SERVER_1 = "pool.ntp.org";
-const char* NTP_SERVER_2 = "time.nist.gov";
-const long GMT_OFFSET_SEC = 0;  // non ci interessa avere ora locale italiana
-const int DAYLIGHT_OFFSET_SEC = 0;
+// #include <HTTPClient.h>
+// #include <WiFi.h>
+// #include <time.h>
 
-// usa IP locale del Mac, tipo: http://192.168.1.50:3000/api/measurements
-const char* SERVER_URL = "http://INSERISCI_IP_MAC:3000/api/measurements";
+// const char* WIFI_SSID = "INSERISCI_NOME_WIFI";
+// const char* WIFI_PASSWORD = "INSERISCI_PASSWORD_WIFI";
+
+// const char* NTP_SERVER_1 = "pool.ntp.org";
+// const char* NTP_SERVER_2 = "time.nist.gov";
+// const long GMT_OFFSET_SEC = 0;
+// const int DAYLIGHT_OFFSET_SEC = 0;
+
+// const char* SERVER_URL = "http://INSERISCI_IP_MAC:3000/api/measurements";
+// const char* DEVICE_API_KEY = "dev-secret-esp32-1";
+
+// =======================
+// CONFIGURAZIONE HASH MISURA
+// =======================
 
 const char* CONTRACT_ADDRESS = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
 
@@ -29,27 +40,12 @@ const char* CONTRACT_ADDRESS = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
 // firmare
 const char* DEVICE_ADDRESS = "0xc2E770A8460ac16C83285225FBB175EFf65Ab186";
 
-// id della chain, serve anche questo per calcolare l'hash della misura
+// id della chain: viene incluso nel payload per evitare firme valide su chain
+// diverse
 const uint64_t CHAIN_ID = 31337;  // Anvil
-
-// Token semplice per evitare che chiunque mandi dati al server, eventualmente
-// intasandolo. Per demo va bene, non è sicurezza "forte", è un filtro leggero
-const char* DEVICE_API_KEY = "dev-secret-esp32-1";
 
 const size_t PACKED_BUFFER_SIZE = 168;
 const size_t DATA_HASH_SIZE = 32;
-
-// Ogni quanto inviare misura
-const unsigned long SEND_INTERVAL_MS = 10000;  // 10 secondi
-
-unsigned long lastSendTime = 0;
-
-// evita che misurazione valida con firma valida venga inviata più volte:
-// il contratto salverà ultimo nonce accettato e rifiuterà quelli vecchi
-uint64_t measurementNonce = 0;
-
-// memorizza l'esito della sincronizzazione NTP
-bool timeSynchronized = false;
 
 // =======================
 // SETUP
@@ -60,15 +56,7 @@ void setup() {
   delay(1000);
 
   Serial.println();
-  Serial.println("Avvio ESP32 IoT Data Chain...");
-
-  connectToWiFi();  // connetto al WiFi
-
-  timeSynchronized = synchronizeTime();  // chiedo l'orario
-
-  randomSeed(analogRead(34));  // rendo casuale la simulazione della misura
-
-  Serial.println("Test buffer packed Solidity + dataHash");
+  Serial.println("Test locale packed buffer + dataHash");
 
   const int64_t testValue = 25;
   const uint64_t testDeviceTimestamp = 1700000000ULL;
@@ -104,159 +92,8 @@ void setup() {
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi disconnesso. Riprovo la connessione...");
-    connectToWiFi();
-
-    if (!timeSynchronized) {
-      timeSynchronized = synchronizeTime();
-    }
-  }
-
-  unsigned long currentTime = millis();  // tempo da quando la scheda è connessa
-
-  if (currentTime - lastSendTime >= SEND_INTERVAL_MS) {
-    lastSendTime = currentTime;
-
-    int measurementValue = readMeasurement();
-
-    Serial.println("Misura letta: ");
-    Serial.println(measurementValue);
-
-    // Ogni volta che ESP32 invia una misura, aumenta il numero progressivo.
-    // In questa fase l'invio è ancora disattivato: stiamo solo testando
-    // dataHash.
-    measurementNonce++;
-
-    // sendMeasurement(measurementValue, measurementNonce);
-  }
-}
-
-// =======================
-// CONNESSIONE WIFI
-// =======================
-
-void connectToWiFi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-  Serial.println("Connessione a WiFi");
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println();
-  Serial.println("WiFi connesso!");
-  Serial.println("IP ESP32: ");
-  Serial.println(WiFi.localIP());
-}
-
-// =======================
-// SINCRONIZZAZIONE ORARIO
-// =======================
-
-bool synchronizeTime() {
-  Serial.println("Sincronizzazione ora via NTP...");
-
-  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER_1, NTP_SERVER_2);
-
-  struct tm timeinfo;
-
-  if (!getLocalTime(&timeinfo)) {
-    Serial.println("Errore: NTP non sincronizzato.");
-    return false;
-  }
-
-  Serial.println("Ora sincronizzata tramite NTP.");
-  return true;
-}
-
-// =======================
-// LOGICA TIMESTAMP
-// =======================
-
-// Torna un timestamp Unix reale se NTP è disponibile.
-// Se NTP non è disponibile, usa millis() / 1000 solo come fallback demo.
-uint64_t getDeviceTimestamp() {
-  if (!timeSynchronized) {
-    Serial.println("Ora non sincronizzata, uso millis() come fallback demo.");
-    return millis() / 1000;
-  }
-
-  return (uint64_t)time(nullptr);
-}
-
-// =======================
-// LETTURA MISURAZIONE
-// =======================
-
-int readMeasurement() {
-  // Versione demo: genera valori casuali tra 20 e 30 compresi.
-  // Esempio: temperatura simulata in gradi Celsius.
-  int simulatedValue = random(20, 31);
-
-  return simulatedValue;
-}
-
-// =======================
-// INVIO AL SERVER NODE.JS
-// =======================
-
-void sendMeasurement(int value, uint64_t nonce) {
-  HTTPClient http;
-
-  Serial.println("Invio POST a: ");
-  Serial.println(SERVER_URL);
-
-  uint64_t deviceTimestamp = getDeviceTimestamp();
-
-  if (!http.begin(SERVER_URL)) {
-    Serial.println("Errore inizializzazione HTTP.");
-    return;
-  }
-
-  // costruisco Header della POST
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-Device-Address", DEVICE_ADDRESS);
-  http.addHeader("X-API-Key", DEVICE_API_KEY);
-
-  // costruisco il body della POST
-  String body = "{";
-  body += "\"deviceAddress\":\"";
-  body += DEVICE_ADDRESS;
-  body += "\",";
-  body += "\"value\":";
-  body += String(value);
-  body += ",";
-  body += "\"deviceTimestamp\":";
-  body += String(deviceTimestamp);
-  body += ",";
-  body += "\"nonce\":";
-  body += String(nonce);
-  body += "}";
-
-  Serial.print("Body JSON: ");
-  Serial.println(body);
-
-  // invio la POST
-  int statusCode = http.POST(body);
-
-  Serial.print("HTTP status code: ");
-  Serial.println(statusCode);
-
-  if (statusCode > 0) {
-    String response = http.getString();
-
-    Serial.print("Risposta server: ");
-    Serial.println(response);
-  } else {
-    Serial.print("Errore HTTP: ");
-    Serial.println(http.errorToString(statusCode));
-  }
-
-  http.end();  // chiude la connessione
+  // Test locale statico:
+  // nessuna misura periodica, nessun WiFi, nessun invio HTTP.
 }
 
 // =======================
