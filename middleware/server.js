@@ -27,6 +27,10 @@ const IOT_DATA_STORAGE_ABI = [
     "function recordSignedMeasurement(address deviceAddress, int256 value, uint256 deviceTimestamp, uint256 nonce, bytes signature)",
 ];
 
+const INT256_MIN = -(1n << 255n);
+const INT256_MAX = (1n << 255n) - 1n;
+const UINT256_MAX = UINT256_MASK;
+
 // classe per errori HTTP
 class HttpError extends Error {
     constructor(statusCode, message) {
@@ -205,12 +209,17 @@ function parseMeasurementRequest(req) {
     const parsedDeviceTimestamp = BigInt(deviceTimestamp);
     const parsedNonce = BigInt(nonce);
 
-    if (parsedDeviceTimestamp < 0n) {
-        throw new HttpError(400, "deviceTimestamp non può essere negativo");
+    // controlli sui range compatibili con Solidity
+    if (parsedValue < INT256_MIN || parsedValue > INT256_MAX) {
+        throw new HttpError(400, "value deve rientrare nel range int256");
     }
 
-    if (parsedNonce <= 0n) {
-        throw new HttpError(400, "nonce deve essere maggiore di zero");
+    if (parsedDeviceTimestamp < 0n || parsedDeviceTimestamp > UINT256_MAX) {
+        throw new HttpError(400, "deviceTimestamp deve rientrare nel range uint256");
+    }
+
+    if (parsedNonce <= 0n || parsedNonce > UINT256_MAX) {
+        throw new HttpError(400, "nonce deve essere un uint256 maggiore di zero");
     }
 
     return {
@@ -245,7 +254,7 @@ function isIntegerLike(value) {
     }
 
     if (typeof value === "number") {
-        return Number.isInteger(value);
+        return Number.isSafeInteger(value); // così non accetta valori int troppo grandi
     }
 
     if (typeof value === "string") {
