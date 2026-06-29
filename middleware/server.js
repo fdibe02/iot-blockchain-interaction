@@ -55,6 +55,8 @@ app.get("/health", handleHealthCheck);
 
 app.post("/api/measurements", authenticateDeviceRequest, recordMeasurement);
 
+app.get("/api/devices/:deviceAddress/nonce", authenticateDeviceRequest, getDeviceNonce);
+
 // 3. Middleware errori
 
 app.use(notFoundHandler);
@@ -86,6 +88,32 @@ async function handleHealthCheck(req, res, next) {
         });
     } catch (error) {
         next(error); // gestisco errori con funzione next
+    }
+}
+
+async function getDeviceNonce(req, res, next) {
+    try {
+        const { deviceAddress } = req.params;
+
+        if (!ethers.isAddress(deviceAddress)) {
+            throw new HttpError(400, "deviceAddress non valido");
+        }
+
+        const normalizedDeviceAddress = ethers.getAddress(deviceAddress);
+
+        await assertDeviceIsRegistered(normalizedDeviceAddress);
+
+        const lastNonce = await iotDataStorage.getLastNonce(normalizedDeviceAddress);
+        const nextNonce = lastNonce + 1n;
+
+        res.json({
+            status: "ok",
+            deviceAddress: normalizedDeviceAddress,
+            lastNonce: lastNonce.toString(),
+            nextNonce: nextNonce.toString(),
+        });
+    } catch (error) {
+        next(error);
     }
 }
 
