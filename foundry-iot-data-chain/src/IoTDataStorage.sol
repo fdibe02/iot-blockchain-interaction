@@ -212,7 +212,7 @@ contract IoTDataStorage {
         return s_lastNonce[deviceAddress];
     }
 
-    // adddress(this) evita che stessa firma sia riutilizzabile su un altro contratto
-    // block.chainid per evitare che stessa firma sia riutilizzabile su un'altrta blockchain
-    // abi.encode piu sicuro contro collisioni tra tipi di dato diverso
+    // address(this) evita che la stessa firma sia riutilizzabile su un altro contratto.
+    // block.chainid evita che la stessa firma sia riutilizzabile su un'altra blockchain.
+    // abi.encodePacked è usato per mantenere lo stesso formato binario ricostruito dal firmware ESP32.
 }
