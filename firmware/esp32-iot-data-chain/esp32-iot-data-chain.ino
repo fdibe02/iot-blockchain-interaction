@@ -17,6 +17,8 @@ const char* NTP_SERVER_2 = "time.nist.gov";
 const long GMT_OFFSET_SEC = 0;  // non ci interessa avere ora locale italiana
 const int DAYLIGHT_OFFSET_SEC = 0;
 
+const int LIGHT_SENSOR_PIN = 34;
+
 const size_t PACKED_BUFFER_SIZE = 168;
 
 const size_t HASH_SIZE = 32;
@@ -163,11 +165,12 @@ uint64_t getDeviceTimestamp() {
 // =======================
 
 int readMeasurement() {
-  // Versione demo: genera valori casuali tra 20 e 30 compresi.
-  // Esempio: temperatura simulata in gradi Celsius.
-  int simulatedValue = random(20, 31);
+  int lightValue = analogRead(LIGHT_SENSOR_PIN);
 
-  return simulatedValue;
+  Serial.print("Luminosita letta: ");
+  Serial.println(lightValue);
+
+  return lightValue;
 }
 
 bool synchronizeNonceFromServer() {
