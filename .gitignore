@@ -14,6 +14,9 @@
 *.log
 npm-debug.log*
 
+# Firmware
+firmware/esp32-iot-data-chain/secrets.h
+
 # Node / frontend / middleware
 node_modules/
 dist/

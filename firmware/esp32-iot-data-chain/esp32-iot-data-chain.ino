@@ -1,4 +1,4 @@
-// invio misura ogni 10 secondi al server Node.js
+// invio misura ogni 20 secondi al server Node.js
 
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -9,40 +9,13 @@
 extern "C" {
 #include "sha3.h"
 }
+#include "secrets.h"
 #include "uECC.h"
-
-// =======================
-// CONFIGURAZIONE WIFI
-// =======================
-
-const char* WIFI_SSID = "iPhoneFranci";
-const char* WIFI_PASSWORD = "cicciodb";
 
 const char* NTP_SERVER_1 = "pool.ntp.org";
 const char* NTP_SERVER_2 = "time.nist.gov";
 const long GMT_OFFSET_SEC = 0;  // non ci interessa avere ora locale italiana
 const int DAYLIGHT_OFFSET_SEC = 0;
-
-// usa IP locale del Mac, tipo: http://192.168.1.50:3000/api/measurements
-const char* SERVER_URL = "http://172.20.10.4:3000/api/measurements";
-
-const char* CONTRACT_ADDRESS = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
-
-// indirizzo pubblico derivato dalla chiave privata che userà il dispositivo per
-// firmare
-const char* DEVICE_ADDRESS = "0xc2E770A8460ac16C83285225FBB175EFf65Ab186";
-
-// ATTENZIONE: per demo va bene, ma non committare mai una private key reale.
-// Meglio spostarla poi in un secrets.h ignorato da Git.
-const char* DEVICE_PRIVATE_KEY = "0xINSERISCI_PRIVATE_KEY_DEL_DEVICE";
-
-// id della chain: viene incluso nel payload per evitare firme valide su chain
-// diverse
-const uint64_t CHAIN_ID = 31337;  // Anvil
-
-// Token semplice per evitare che chiunque mandi dati al server, eventualmente
-// intasandolo. Per demo va bene, non è sicurezza "forte", è un filtro leggero
-const char* DEVICE_API_KEY = "dev-secret-esp32-1";
 
 const size_t PACKED_BUFFER_SIZE = 168;
 
@@ -58,7 +31,7 @@ const size_t SIGNATURE_RS_HEX_STRING_SIZE =
     HEX_PREFIX_SIZE + SIGNATURE_RS_SIZE * 2 + NULL_TERMINATOR_SIZE;
 
 // Ogni quanto inviare misura
-const unsigned long SEND_INTERVAL_MS = 10000;  // 10 secondi
+const unsigned long SEND_INTERVAL_MS = 20000;  // 20 secondi
 
 unsigned long lastSendTime = 0;
 
@@ -68,6 +41,9 @@ uint64_t measurementNonce = 0;
 
 // memorizza l'esito della sincronizzazione NTP
 bool timeSynchronized = false;
+
+// memorizza esito sincronizzazione nonce
+bool nonceSynchronized = false;
 
 // =======================
 // SETUP
@@ -85,6 +61,8 @@ void setup() {
   connectToWiFi();  // connetto al WiFi
 
   timeSynchronized = synchronizeTime();  // chiedo l'orario
+
+  nonceSynchronized = synchronizeNonceFromServer();  // chiedo nonce
 
   randomSeed(analogRead(34));  // rendo casuale la simulazione della misura
 }
@@ -108,6 +86,15 @@ void loop() {
 
     Serial.println("Misura letta: ");
     Serial.println(measurementValue);
+
+    if (!nonceSynchronized) {
+      nonceSynchronized = synchronizeNonceFromServer();
+
+      if (!nonceSynchronized) {
+        Serial.println("Nonce non sincronizzato. Salto invio misura.");
+        return;
+      }
+    }
 
     // Ogni volta che ESP32 invia una misura, aumenta il numero progressivo.
     measurementNonce++;
@@ -181,6 +168,104 @@ int readMeasurement() {
   int simulatedValue = random(20, 31);
 
   return simulatedValue;
+}
+
+bool synchronizeNonceFromServer() {
+  HTTPClient http;
+
+  Serial.println("Sincronizzazione nonce dal middleware...");
+  Serial.println(NONCE_URL);
+
+  if (!http.begin(NONCE_URL)) {
+    Serial.println("Errore inizializzazione HTTP per nonce.");
+    return false;
+  }
+
+  http.addHeader("X-API-Key", DEVICE_API_KEY);
+
+  int statusCode = http.GET();
+
+  Serial.print("HTTP nonce status code: ");
+  Serial.println(statusCode);
+
+  if (statusCode != 200) {
+    String response = http.getString();
+
+    Serial.print("Errore sincronizzazione nonce: ");
+    Serial.println(response);
+
+    http.end();
+    return false;
+  }
+
+  String response = http.getString();
+
+  Serial.print("Risposta nonce: ");
+  Serial.println(response);
+
+  uint64_t nextNonce = 0;
+
+  if (!extractUint64JsonField(response, "nextNonce", nextNonce)) {
+    Serial.println("Errore parsing nextNonce");
+    http.end();
+    return false;
+  }
+
+  if (nextNonce == 0) {
+    Serial.println("nextNonce non valido");
+    http.end();
+    return false;
+  }
+
+  measurementNonce = nextNonce - 1;
+
+  Serial.print("Nonce sincronizzato. Ultimo nonce noto: ");
+  Serial.println(String(measurementNonce));
+
+  http.end();
+  return true;
+}
+
+bool extractUint64JsonField(const String& json, const char* fieldName,
+                            uint64_t& value) {
+  String marker = "\"";
+  marker += fieldName;
+  marker += "\":\"";
+
+  int start = json.indexOf(marker);
+
+  if (start < 0) {
+    return false;
+  }
+
+  start += marker.length();
+
+  int end = json.indexOf("\"", start);
+
+  if (end < 0) {
+    return false;
+  }
+
+  String numberText = json.substring(start, end);
+
+  if (numberText.length() == 0) {
+    return false;
+  }
+
+  uint64_t parsedValue = 0;
+
+  for (int i = 0; i < numberText.length(); i++) {
+    char c = numberText.charAt(i);
+
+    if (c < '0' || c > '9') {
+      return false;
+    }
+
+    parsedValue = parsedValue * 10 + (uint64_t)(c - '0');
+  }
+
+  value = parsedValue;
+  return true;
 }
 
 // =======================
