@@ -109,14 +109,31 @@ async function getDeviceNonce(req, res, next) {
 
         await assertDeviceIsRegistered(normalizedDeviceAddress);
 
-        const lastNonce = await iotDataStorage.getLastNonce(normalizedDeviceAddress);
-        const nextNonce = lastNonce + 1n;
+        const lastNonceOnChain = await iotDataStorage.getLastNonce(
+            normalizedDeviceAddress,
+        );
+
+        const pendingLastNonce =
+            pendingLastNonceByDevice.get(normalizedDeviceAddress) ?? 0n;
+
+        const effectiveLastNonce =
+            lastNonceOnChain > pendingLastNonce
+                ? lastNonceOnChain
+                : pendingLastNonce;
+
+        const nextNonce = effectiveLastNonce + 1n;
 
         res.json({
             status: "ok",
             deviceAddress: normalizedDeviceAddress,
-            lastNonce: lastNonce.toString(),
+
+            // Valore usato davvero dal firmware per calcolare nextNonce.
+            lastNonce: effectiveLastNonce.toString(),
             nextNonce: nextNonce.toString(),
+
+            // Campi utili solo per debug/log.
+            onChainLastNonce: lastNonceOnChain.toString(),
+            pendingLastNonce: pendingLastNonce.toString(),
         });
     } catch (error) {
         next(error);
@@ -152,6 +169,7 @@ async function recordMeasurement(req, res, next) {
         );
 
         rememberPendingNonce(measurement.deviceAddress, measurement.nonce);
+
         logTransactionConfirmationInBackground(
             transactionResponse,
             measurement,
