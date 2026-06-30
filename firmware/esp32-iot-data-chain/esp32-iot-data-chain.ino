@@ -35,6 +35,9 @@ const size_t SIGNATURE_RS_HEX_STRING_SIZE =
 // Ogni quanto inviare misura
 const unsigned long SEND_INTERVAL_MS = 20000;  // 20 secondi
 
+const int32_t HTTP_CONNECT_TIMEOUT_MS = 5000;
+const uint16_t HTTP_RESPONSE_TIMEOUT_MS = 15000;
+
 unsigned long lastSendTime = 0;
 
 // evita che misurazione valida con firma valida venga inviata più volte:
@@ -98,9 +101,19 @@ void loop() {
       }
     }
 
-    // Ogni volta che ESP32 invia una misura, aumenta il numero progressivo.
-    measurementNonce++;
-    sendMeasurement(measurementValue, measurementNonce);
+    // Ogni volta che ESP32 invia una misura con successo, aumenta il numero
+    // progressivo.
+    uint64_t nextNonce = measurementNonce + 1;
+
+    bool measurementSent = sendMeasurement(measurementValue, nextNonce);
+
+    if (measurementSent) {
+      measurementNonce = nextNonce;
+    } else {
+      Serial.println(
+          "Invio misura fallito. Risincronizzo il nonce al prossimo giro.");
+      nonceSynchronized = false;
+    }
   }
 }
 
@@ -183,6 +196,9 @@ bool synchronizeNonceFromServer() {
     Serial.println("Errore inizializzazione HTTP per nonce.");
     return false;
   }
+
+  http.setConnectTimeout(HTTP_CONNECT_TIMEOUT_MS);
+  http.setTimeout(HTTP_RESPONSE_TIMEOUT_MS);
 
   http.addHeader("X-API-Key", DEVICE_API_KEY);
 
@@ -275,7 +291,7 @@ bool extractUint64JsonField(const String& json, const char* fieldName,
 // INVIO AL SERVER NODE.JS
 // =======================
 
-void sendMeasurement(int value, uint64_t nonce) {
+bool sendMeasurement(int value, uint64_t nonce) {
   HTTPClient http;
 
   Serial.println("Invio POST a: ");
@@ -288,14 +304,14 @@ void sendMeasurement(int value, uint64_t nonce) {
   if (!buildPackedMeasurementBuffer(packedBuffer, value, deviceTimestamp,
                                     nonce)) {
     Serial.println("Errore costruzione packed buffer");
-    return;
+    return false;
   }
 
   uint8_t dataHash[HASH_SIZE];
 
   if (!keccak256Buffer(packedBuffer, PACKED_BUFFER_SIZE, dataHash)) {
     Serial.println("Errore calcolo Keccak-256 del packed buffer");
-    return;
+    return false;
   }
 
   char dataHashHex[HASH_HEX_STRING_SIZE];
@@ -308,7 +324,7 @@ void sendMeasurement(int value, uint64_t nonce) {
 
   if (!signDataHash(dataHash, signatureRs)) {
     Serial.println("Errore firma dataHash");
-    return;
+    return false;
   }
 
   char signatureHex[SIGNATURE_RS_HEX_STRING_SIZE];
@@ -319,8 +335,11 @@ void sendMeasurement(int value, uint64_t nonce) {
 
   if (!http.begin(SERVER_URL)) {
     Serial.println("Errore inizializzazione HTTP.");
-    return;
+    return false;
   }
+
+  http.setConnectTimeout(HTTP_CONNECT_TIMEOUT_MS);
+  http.setTimeout(HTTP_RESPONSE_TIMEOUT_MS);
 
   // costruisco Header della POST
   http.addHeader("Content-Type", "application/json");
@@ -355,10 +374,24 @@ void sendMeasurement(int value, uint64_t nonce) {
   Serial.print("HTTP status code: ");
   Serial.println(statusCode);
 
-  if (statusCode > 0) {
+  if (statusCode == 200 || statusCode == 201 || statusCode == 202) {
     String response = http.getString();
 
     Serial.print("Risposta server: ");
+    Serial.println(response);
+
+    bool success = false;
+
+    if (statusCode == 202) {
+      Serial.println(
+          "Transazione inviata alla rete, in attesa di conferma blockchain.");
+
+      success = true;
+    }
+  } else if (statusCode > 0) {
+    String response = http.getString();
+
+    Serial.print("Errore server: ");
     Serial.println(response);
   } else {
     Serial.print("Errore HTTP: ");
@@ -366,6 +399,7 @@ void sendMeasurement(int value, uint64_t nonce) {
   }
 
   http.end();  // chiude la connessione
+  return success;
 }
 
 // =======================
