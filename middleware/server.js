@@ -31,6 +31,8 @@ const INT256_MIN = -(1n << 255n);
 const INT256_MAX = (1n << 255n) - 1n;
 const UINT256_MAX = UINT256_MASK;
 
+const pendingLastNonceByDevice = new Map();
+
 // classe per errori HTTP
 class HttpError extends Error {
     constructor(statusCode, message) {
@@ -139,7 +141,8 @@ async function recordMeasurement(req, res, next) {
             measurement.deviceAddress
         );
 
-        // Registro la misurazione on-chain.
+        // Invio la transazione alla rete, ma non blocco la risposta HTTP
+        // aspettando mining/conferme blockchain.
         const transactionResponse = await iotDataStorage.recordSignedMeasurement(
             measurement.deviceAddress,
             measurement.value,
@@ -148,12 +151,16 @@ async function recordMeasurement(req, res, next) {
             signatureForContract
         );
 
-        const receipt = await transactionResponse.wait(CONFIRMATIONS);
+        rememberPendingNonce(measurement.deviceAddress, measurement.nonce);
+        logTransactionConfirmationInBackground(
+            transactionResponse,
+            measurement,
+            dataHash,
+        );
 
-        res.status(201).json({
-            status: "recorded",
+        res.status(202).json({
+            status: "submitted",
             transactionHash: transactionResponse.hash,
-            blockNumber: receipt?.blockNumber ?? null,
             deviceAddress: measurement.deviceAddress,
             value: measurement.value.toString(),
             deviceTimestamp: measurement.deviceTimestamp.toString(),
@@ -163,6 +170,48 @@ async function recordMeasurement(req, res, next) {
     } catch (error) {
         next(error);
     }
+}
+
+function logTransactionConfirmationInBackground(
+    transactionResponse,
+    measurement,
+    dataHash,
+) {
+    if (CONFIRMATIONS === 0) {
+        console.log(
+            `Transazione inviata: ${transactionResponse.hash} ` +
+            `(nonce misura ${measurement.nonce.toString()})`,
+        );
+        return;
+    }
+
+    transactionResponse
+        .wait(CONFIRMATIONS)
+        .then((receipt) => {
+            forgetPendingNonceIfCurrent(
+                measurement.deviceAddress,
+                measurement.nonce,
+            );
+
+            console.log(
+                `Transazione confermata: ${transactionResponse.hash} ` +
+                `block=${receipt?.blockNumber ?? "n/d"} ` +
+                `device=${measurement.deviceAddress} ` +
+                `nonce=${measurement.nonce.toString()} ` +
+                `dataHash=${dataHash}`,
+            );
+        })
+        .catch((error) => {
+            forgetPendingNonceIfCurrent(
+                measurement.deviceAddress,
+                measurement.nonce,
+            );
+
+            console.error(
+                `Errore conferma transazione ${transactionResponse.hash}:`,
+                error,
+            );
+        });
 }
 
 function authenticateDeviceRequest(req, res, next) {
@@ -273,10 +322,33 @@ async function assertDeviceIsRegistered(deviceAddress) {
 }
 
 async function assertNonceIsFresh(deviceAddress, nonce) {
-    const lastNonce = await iotDataStorage.getLastNonce(deviceAddress);
+    const lastNonce = await getEffectiveLastNonce(deviceAddress);
 
     if (nonce <= lastNonce) {
         throw new HttpError(409, "Nonce già usato o non valido");
+    }
+}
+
+async function getEffectiveLastNonce(deviceAddress) {
+    const lastNonceOnChain = await iotDataStorage.getLastNonce(deviceAddress);
+    const pendingLastNonce = pendingLastNonceByDevice.get(deviceAddress) ?? 0n;
+
+    return lastNonceOnChain > pendingLastNonce ? lastNonceOnChain : pendingLastNonce;
+}
+
+function rememberPendingNonce(deviceAddress, nonce) {
+    const currentPendingNonce = pendingLastNonceByDevice.get(deviceAddress) ?? 0n;
+
+    if (nonce > currentPendingNonce) {
+        pendingLastNonceByDevice.set(deviceAddress, nonce);
+    }
+}
+
+function forgetPendingNonceIfCurrent(deviceAddress, nonce) {
+    const currentPendingNonce = pendingLastNonceByDevice.get(deviceAddress);
+
+    if (currentPendingNonce === nonce) {
+        pendingLastNonceByDevice.delete(deviceAddress);
     }
 }
 
