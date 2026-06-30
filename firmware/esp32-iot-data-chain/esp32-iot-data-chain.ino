@@ -374,20 +374,20 @@ bool sendMeasurement(int value, uint64_t nonce) {
   Serial.print("HTTP status code: ");
   Serial.println(statusCode);
 
+  bool success = false;
+
   if (statusCode == 200 || statusCode == 201 || statusCode == 202) {
     String response = http.getString();
 
     Serial.print("Risposta server: ");
     Serial.println(response);
 
-    bool success = false;
-
     if (statusCode == 202) {
       Serial.println(
           "Transazione inviata alla rete, in attesa di conferma blockchain.");
-
-      success = true;
     }
+
+    success = true;
   } else if (statusCode > 0) {
     String response = http.getString();
 
@@ -398,7 +398,7 @@ bool sendMeasurement(int value, uint64_t nonce) {
     Serial.println(http.errorToString(statusCode));
   }
 
-  http.end();  // chiude la connessione
+  http.end();  // chiude la connessione con il server
   return success;
 }
 
