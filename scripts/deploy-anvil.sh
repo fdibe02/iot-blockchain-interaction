@@ -17,6 +17,7 @@ CONTRACT_NAME="IoTDataStorage"
 
 FRONTEND_ADDRESS_FILE="frontend/js/contract-address.js"
 ANVIL_ENV_FILE="middleware/.env.anvil"
+FIRMWARE_UPDATE_SCRIPT="scripts/update-firmware-config.js"
 
 # ==========================
 # CONTROLLI
@@ -128,6 +129,12 @@ const updatedContent = content.replace(
 fs.writeFileSync(envFile, updatedContent);
 " "$ANVIL_ENV_FILE" "$CONTRACT_ADDRESS"
 
+if [ -f "$FIRMWARE_UPDATE_SCRIPT" ]; then
+  node "$FIRMWARE_UPDATE_SCRIPT" "$CONTRACT_ADDRESS" "$CHAIN_ID"
+else
+  echo "Script aggiornamento firmware non trovato: $FIRMWARE_UPDATE_SCRIPT"
+fi
+
 echo ""
 echo "Deploy completato."
 echo "Indirizzo contratto:"
@@ -137,3 +144,5 @@ echo "File aggiornato:"
 echo "$FRONTEND_ADDRESS_FILE"
 echo "Env Anvil aggiornato:"
 echo "$ANVIL_ENV_FILE"
+echo "Firmware secrets aggiornato se presente:"
+echo "firmware/esp32-iot-data-chain/secrets.h"

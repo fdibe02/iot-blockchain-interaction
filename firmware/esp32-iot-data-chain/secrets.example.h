@@ -11,6 +11,6 @@ const char* DEVICE_API_KEY = "dev-secret-esp32-1"; // Token semplice per evitare
 const char* CONTRACT_ADDRESS = "...";
 const char* DEVICE_ADDRESS = "...";
 const uint64_t CHAIN_ID = 11155111; // id della chain: viene incluso nel payload per evitare firme valide su chain diverse
-                                    // qui messo Sepolia come placeholder
+                                    // gli script di deploy possono aggiornarlo in secrets.h insieme a CONTRACT_ADDRESS
 const char* SERVER_URL = "http://IP_MAC:3000/api/measurements";
 const char* NONCE_URL = "http://IP_MAC:3000/api/devices/DEVICE_ADDRESS/nonce";
