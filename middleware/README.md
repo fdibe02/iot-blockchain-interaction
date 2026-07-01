@@ -51,6 +51,7 @@ middleware/
 ├── .env.sepolia.example
 ├── README.md
 └── scripts/
+    ├── register-device.js
     ├── simulate-device.js
     ├── test-negative-measurements.js
     └── verify-hash-consistency.js
@@ -79,6 +80,7 @@ Esempio di configurazione locale con Anvil:
 PORT=3000
 RPC_URL=http://127.0.0.1:8545
 CONTRACT_ADDRESS=0xINSERISCI_ADDRESS_CONTRATTO
+OWNER_PRIVATE_KEY=0xINSERISCI_PRIVATE_KEY_OWNER
 RELAYER_PRIVATE_KEY=0xINSERISCI_PRIVATE_KEY_RELAYER
 DEVICE_API_KEY=dev-secret-esp32-1
 CONFIRMATIONS=1
@@ -95,6 +97,7 @@ MEASUREMENT_VALUE=25
 | `PORT`                | Porta HTTP su cui avviare il middleware. Default: `3000`.                   |
 | `RPC_URL`             | URL del nodo blockchain, ad esempio Anvil o un provider RPC testnet.        |
 | `CONTRACT_ADDRESS`    | Address dello smart contract deployato.                                     |
+| `OWNER_PRIVATE_KEY`   | Private key dell'owner, usata per registrare dispositivi.                   |
 | `RELAYER_PRIVATE_KEY` | Private key del wallet usato dal middleware per inviare transazioni.        |
 | `DEVICE_API_KEY`      | API key HTTP richiesta dal middleware per accettare misure dal dispositivo. |
 | `CONFIRMATIONS`       | Numero di conferme da attendere dopo l'invio della transazione.             |
@@ -228,6 +231,32 @@ Risposta attesa:
 ```
 
 ## Script di simulazione
+
+### Registrazione di un dispositivo
+
+Lo script `scripts/register-device.js` registra un dispositivo nello smart contract usando `OWNER_PRIVATE_KEY`.
+
+Se il dispositivo è già registrato, lo script stampa i dati esistenti e non invia una nuova transazione.
+
+Esecuzione su Anvil:
+
+```bash
+npm run register-device:anvil
+```
+
+Senza argomenti, lo script prova a derivare il device address da `DEVICE_PRIVATE_KEY`. È anche possibile passare address e metadata esplicitamente:
+
+```bash
+npm run register-device:anvil -- 0xDEVICE_ADDRESS esp32-laboratorio
+```
+
+Esecuzione su Sepolia:
+
+```bash
+npm run register-device:sepolia -- 0xDEVICE_ADDRESS esp32-laboratorio
+```
+
+Su Sepolia questo comando invia una transazione reale e consuma gas.
 
 ### Simulazione di un dispositivo
 

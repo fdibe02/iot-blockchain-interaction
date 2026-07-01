@@ -8,8 +8,10 @@ FQBN ?= esp32:esp32:esp32
 PORT ?= /dev/cu.usbserial-0001
 
 VALUE ?=
+DEVICE_ADDRESS ?=
+METADATA_URI ?= esp32-laboratorio
 
-.PHONY: install check check-js check-scripts build-contract test-contract fmt-contract fmt-contract-check deploy-anvil start-middleware-anvil health-anvil simulate-device-anvil verify-hash-anvil test-negative-anvil show-address deploy-sepolia start-middleware-sepolia health-sepolia simulate-device-sepolia verify-hash-sepolia test-negative-sepolia firmware-compile firmware-upload firmware-monitor firmware-flash-monitor
+.PHONY: install check check-js check-scripts build-contract test-contract fmt-contract fmt-contract-check deploy-anvil start-middleware-anvil health-anvil register-device-anvil simulate-device-anvil verify-hash-anvil test-negative-anvil show-address deploy-sepolia start-middleware-sepolia health-sepolia register-device-sepolia simulate-device-sepolia verify-hash-sepolia test-negative-sepolia firmware-compile firmware-upload firmware-monitor firmware-flash-monitor
 
 install:
 	@npm --prefix middleware install
@@ -19,6 +21,7 @@ check: check-js check-scripts fmt-contract-check test-contract
 check-js:
 	@node --check middleware/server.js
 	@node --check middleware/scripts/check-packed-hash.js
+	@node --check middleware/scripts/register-device.js
 	@node --check middleware/scripts/simulate-device.js
 	@node --check middleware/scripts/test-negative-measurements.js
 	@node --check middleware/scripts/verify-hash-consistency.js
@@ -49,6 +52,9 @@ start-middleware-anvil:
 health-anvil:
 	@curl -sS http://localhost:3000/health
 
+register-device-anvil:
+	@DEVICE_ADDRESS="$(DEVICE_ADDRESS)" METADATA_URI="$(METADATA_URI)" npm --prefix middleware run register-device:anvil
+
 simulate-device-anvil:
 	@npm --prefix middleware run simulate-device:anvil -- $(VALUE)
 
@@ -66,6 +72,9 @@ start-middleware-sepolia:
 
 health-sepolia:
 	@curl -sS http://localhost:3000/health
+
+register-device-sepolia:
+	@DEVICE_ADDRESS="$(DEVICE_ADDRESS)" METADATA_URI="$(METADATA_URI)" npm --prefix middleware run register-device:sepolia
 
 simulate-device-sepolia:
 	@npm --prefix middleware run simulate-device:sepolia -- $(VALUE)

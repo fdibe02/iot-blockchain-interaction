@@ -249,6 +249,7 @@ Il Makefile permette di automatizzare alcune operazioni ripetitive:
 * deploy dello smart contract su Anvil;
 * aggiornamento automatico dell'indirizzo del contratto usato dal frontend;
 * visualizzazione dell'indirizzo del contratto configurato nel frontend;
+* registrazione di un dispositivo da console;
 * invio di una misurazione simulata tramite middleware;
 * compilazione e upload del firmware ESP32;
 * test e controlli di sintassi/formattazione.
@@ -346,6 +347,7 @@ Comandi Make utili:
 ```bash
 make start-middleware-anvil
 make health-anvil
+make register-device-anvil
 make verify-hash-anvil
 make test-negative-anvil
 ```
@@ -355,8 +357,22 @@ Per Sepolia esistono i target equivalenti:
 ```bash
 make start-middleware-sepolia
 make health-sepolia
+make register-device-sepolia
 make verify-hash-sepolia
 make test-negative-sepolia
+```
+
+`register-device-*` registra un dispositivo usando `OWNER_PRIVATE_KEY`. Se `DEVICE_ADDRESS` non viene passato, lo script prova a derivare l'address da `DEVICE_PRIVATE_KEY` configurata nell'ambiente:
+
+```bash
+make register-device-anvil
+make register-device-anvil DEVICE_ADDRESS=0x... METADATA_URI=esp32-laboratorio
+```
+
+Su Sepolia il comando invia una transazione reale e consuma gas:
+
+```bash
+make register-device-sepolia DEVICE_ADDRESS=0x... METADATA_URI=esp32-laboratorio
 ```
 
 ### Comandi firmware
