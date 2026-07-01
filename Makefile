@@ -2,16 +2,52 @@ SHELL := /bin/bash
 
 ANVIL_ENV := middleware/.env.anvil
 SEPOLIA_ENV := middleware/.env.sepolia
+FOUNDRY_DIR := foundry-iot-data-chain
+FIRMWARE_DIR := firmware/esp32-iot-data-chain
+FQBN ?= esp32:esp32:esp32
+PORT ?= /dev/cu.usbserial-0001
 
 VALUE ?=
 
-.PHONY: deploy-anvil start-middleware-anvil simulate-device-anvil verify-hash-anvil test-negative-anvil show-address deploy-sepolia start-middleware-sepolia simulate-device-sepolia verify-hash-sepolia test-negative-sepolia
+.PHONY: install check check-js check-scripts build-contract test-contract fmt-contract fmt-contract-check deploy-anvil start-middleware-anvil health-anvil simulate-device-anvil verify-hash-anvil test-negative-anvil show-address deploy-sepolia start-middleware-sepolia health-sepolia simulate-device-sepolia verify-hash-sepolia test-negative-sepolia firmware-compile firmware-upload firmware-monitor firmware-flash-monitor
+
+install:
+	@npm --prefix middleware install
+
+check: check-js check-scripts fmt-contract-check test-contract
+
+check-js:
+	@node --check middleware/server.js
+	@node --check middleware/scripts/check-packed-hash.js
+	@node --check middleware/scripts/simulate-device.js
+	@node --check middleware/scripts/test-negative-measurements.js
+	@node --check middleware/scripts/verify-hash-consistency.js
+	@node --check scripts/update-firmware-config.js
+
+check-scripts:
+	@bash -n scripts/deploy-anvil.sh
+	@bash -n scripts/deploy-sepolia.sh
+
+build-contract:
+	@cd $(FOUNDRY_DIR) && forge build
+
+test-contract:
+	@cd $(FOUNDRY_DIR) && forge test
+
+fmt-contract:
+	@cd $(FOUNDRY_DIR) && forge fmt
+
+fmt-contract-check:
+	@cd $(FOUNDRY_DIR) && forge fmt --check
 
 deploy-anvil:
 	@set -a; source $(ANVIL_ENV); set +a; ./scripts/deploy-anvil.sh
 
 start-middleware-anvil:
 	@npm --prefix middleware run dev:anvil
+
+health-anvil:
+	@curl -sS http://localhost:3000/health
 
 simulate-device-anvil:
 	@npm --prefix middleware run simulate-device:anvil -- $(VALUE)
@@ -28,6 +64,9 @@ deploy-sepolia:
 start-middleware-sepolia:
 	@npm --prefix middleware run dev:sepolia
 
+health-sepolia:
+	@curl -sS http://localhost:3000/health
+
 simulate-device-sepolia:
 	@npm --prefix middleware run simulate-device:sepolia -- $(VALUE)
 
@@ -40,6 +79,13 @@ test-negative-sepolia:
 show-address:
 	@cat frontend/js/contract-address.js
 
+firmware-compile:
+	@arduino-cli compile --fqbn $(FQBN) $(FIRMWARE_DIR)
 
+firmware-upload:
+	@arduino-cli upload -p $(PORT) --fqbn $(FQBN) $(FIRMWARE_DIR)
 
-	
+firmware-monitor:
+	@arduino-cli monitor -p $(PORT) -c baudrate=115200
+
+firmware-flash-monitor: firmware-upload firmware-monitor

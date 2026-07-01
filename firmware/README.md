@@ -61,14 +61,29 @@ Le variabili sensibili, come password WiFi, API key e private key del dispositiv
 
 La compilazione è stata verificata tramite Arduino CLI:
 
+```bash
 arduino-cli compile \
   --fqbn esp32:esp32:esp32 \
   firmware/esp32-iot-data-chain
+```
 
 Output ottenuto:
 
+```text
 Sketch uses 1038679 bytes (79%) of program storage space.
 Global variables use 48584 bytes (14%) of dynamic memory.
+```
+
+Dal Makefile della root si possono usare comandi più brevi:
+
+```bash
+make firmware-compile
+make firmware-upload PORT=/dev/cu.usbserial-0001
+make firmware-monitor PORT=/dev/cu.usbserial-0001
+make firmware-flash-monitor PORT=/dev/cu.usbserial-0001
+```
+
+`firmware-flash-monitor` esegue upload e monitor seriale in sequenza. Se la board usa una porta diversa, sostituire il valore di `PORT`.
 
 ## Stato attuale
 

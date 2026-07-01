@@ -235,7 +235,10 @@ Raccoglie comandi utili per automatizzare operazioni frequenti durante lo svilup
 
 * deploy del contratto;
 * visualizzazione dell'indirizzo del contratto;
-* invio diretto di misurazioni simulate allo smart contract.
+* avvio del middleware;
+* invio di misurazioni simulate tramite middleware;
+* compilazione, upload e monitor seriale del firmware;
+* controlli rapidi su script, smart contract e pipeline.
 
 ## Automazione sviluppo locale
 
@@ -246,9 +249,41 @@ Il Makefile permette di automatizzare alcune operazioni ripetitive:
 * deploy dello smart contract su Anvil;
 * aggiornamento automatico dell'indirizzo del contratto usato dal frontend;
 * visualizzazione dell'indirizzo del contratto configurato nel frontend;
-* invio diretto di una misurazione simulata al contratto.
+* invio di una misurazione simulata tramite middleware;
+* compilazione e upload del firmware ESP32;
+* test e controlli di sintassi/formattazione.
 
 ## Comandi principali
+
+### Installazione dipendenze
+
+```bash
+make install
+```
+
+Installa le dipendenze del middleware Node.js.
+
+### Controlli generali
+
+```bash
+make check
+```
+
+Esegue controlli non interattivi su JavaScript, script Bash, formattazione Solidity e test Foundry. Per controlli più mirati:
+
+```bash
+make check-js
+make check-scripts
+make fmt-contract-check
+make test-contract
+```
+
+Per compilare o formattare i contratti:
+
+```bash
+make build-contract
+make fmt-contract
+```
 
 ### Deploy del contratto
 
@@ -305,6 +340,35 @@ make simulate-device-anvil VALUE=28
 Il middleware contiene script npm separati per i profili Anvil e Sepolia. Questi script coprono avvio del server, simulazione di un dispositivo firmante, test applicativi e verifica di coerenza dell'hash.
 
 I dettagli operativi sono documentati in `middleware/README.md`.
+
+Comandi Make utili:
+
+```bash
+make start-middleware-anvil
+make health-anvil
+make verify-hash-anvil
+make test-negative-anvil
+```
+
+Per Sepolia esistono i target equivalenti:
+
+```bash
+make start-middleware-sepolia
+make health-sepolia
+make verify-hash-sepolia
+make test-negative-sepolia
+```
+
+### Comandi firmware
+
+```bash
+make firmware-compile
+make firmware-upload PORT=/dev/cu.usbserial-0001
+make firmware-monitor PORT=/dev/cu.usbserial-0001
+make firmware-flash-monitor PORT=/dev/cu.usbserial-0001
+```
+
+Il target `firmware-flash-monitor` carica il firmware sulla board e apre subito il monitor seriale. Il valore di default di `PORT` è `/dev/cu.usbserial-0001`; se la board usa una porta diversa, passarla esplicitamente.
 
 ## Flusso di sviluppo locale
 
