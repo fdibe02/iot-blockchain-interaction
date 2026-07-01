@@ -3,14 +3,16 @@
 ## Obiettivo
 
 Questo firmware rappresenta la componente IoT del progetto.  
-L'ESP32 raccoglie periodicamente una misurazione e la invia a un server Node.js tramite richiesta HTTP POST.
+L'ESP32 raccoglie periodicamente una misurazione, costruisce il messaggio da firmare, genera una firma ECDSA secp256k1 e invia il payload firmato a un server Node.js tramite richiesta HTTP POST.
 
 ## Architettura
 
 ESP32 → server Node.js → smart contract → frontend web3
 
 L'ESP32 non comunica direttamente con la blockchain.  
-La chiamata allo smart contract viene gestita dal server Node.js, evitando di inserire chiavi private Ethereum nel firmware.
+La chiamata allo smart contract viene gestita dal server Node.js, che agisce da relayer e paga il gas della transazione.
+
+La private key del dispositivo è invece presente nel firmware del prototipo perché serve a firmare le misure. Per una tesi triennale e una demo controllata è una scelta ragionevole; in un sistema reale andrebbe protetta con meccanismi hardware più robusti.
 
 ## File principale
 
@@ -22,6 +24,9 @@ firmware/esp32-iot-data-chain/esp32-iot-data-chain.ino
 
 - WiFi.h
 - HTTPClient.h
+- time.h
+- sha3
+- micro-ecc / uECC
 
 ## Configurazione
 
@@ -30,12 +35,17 @@ Nel firmware devono essere configurati:
 - SSID della rete WiFi
 - password della rete WiFi
 - URL del server Node.js
-- identificativo logico del dispositivo
+- URL per sincronizzare il nonce dal middleware
+- address Ethereum del dispositivo
+- address dello smart contract
+- chain id della rete usata
+- private key del dispositivo
 - API key del dispositivo
 
 Esempio:
 
 const char* SERVER_URL = "http://192.168.1.50:3000/api/measurements";
+const char* NONCE_URL = "http://192.168.1.50:3000/api/devices/0xDEVICE_ADDRESS/nonce";
 
 Nota: se il server Node.js gira sul Mac, non bisogna usare localhost, ma l'indirizzo IP locale del Mac.
 
@@ -56,6 +66,17 @@ Global variables use 48584 bytes (14%) of dynamic memory.
 
 Il firmware compila correttamente per ESP32.
 
+Il firmware attuale:
+
+- si connette al WiFi;
+- sincronizza l'orario tramite NTP quando disponibile;
+- legge una misura dal pin analogico configurato;
+- sincronizza il nonce dal middleware;
+- costruisce il buffer binario compatibile con `abi.encodePacked(...)`;
+- calcola il `dataHash` con Keccak-256;
+- firma l'hash con ECDSA secp256k1;
+- invia al middleware `deviceAddress`, `value`, `deviceTimestamp`, `nonce` e `signature`.
+
 Non sono ancora stati verificati:
 
 - upload sulla board fisica
@@ -63,6 +84,7 @@ Non sono ancora stati verificati:
 - comunicazione seriale
 - invio effettivo della richiesta HTTP al server Node.js
 - integrazione con sensore reale
+- registrazione end-to-end della misura firmata prodotta dalla board
 
 ## Prossimi passi
 

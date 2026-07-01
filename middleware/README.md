@@ -188,14 +188,42 @@ Risposta in caso di successo:
 
 ```json
 {
-  "status": "recorded",
+  "status": "submitted",
   "transactionHash": "0x...",
-  "blockNumber": 3,
   "deviceAddress": "0x...",
   "value": "25",
   "deviceTimestamp": "1782227412",
   "nonce": "1",
   "dataHash": "0x..."
+}
+```
+
+Il middleware risponde con HTTP `202 Accepted`: significa che la transazione è stata inviata alla rete, ma il server non aspetta il mining prima di rispondere al dispositivo. La conferma viene poi registrata nei log del middleware.
+
+### Sincronizzazione nonce
+
+```http
+GET /api/devices/:deviceAddress/nonce
+```
+
+Richiede header:
+
+```http
+X-API-Key: dev-secret-esp32-1
+```
+
+Il firmware ESP32 usa questo endpoint per conoscere il prossimo nonce da firmare prima di inviare una misura.
+
+Risposta attesa:
+
+```json
+{
+  "status": "ok",
+  "deviceAddress": "0x...",
+  "lastNonce": "0",
+  "nextNonce": "1",
+  "onChainLastNonce": "0",
+  "pendingLastNonce": "0"
 }
 ```
 
@@ -273,7 +301,7 @@ Test 4 - Nonce alterato dopo la firma
 Status: 400
 
 Test 5 - Misura valida
-Status: 201
+Status: 202
 
 Test 6 - Replay della stessa misura
 Status: 409
@@ -314,4 +342,4 @@ In questo modo il middleware non è il produttore fiduciario della misura: può 
 
 Il middleware è configurabile tramite profili separati per Anvil e Sepolia. Una misura firmata da un dispositivo simulato può essere inviata al middleware, registrata sullo smart contract e letta dal frontend Web3.
 
-Il firmware ESP32 attuale invia già i campi principali della misura, ma la generazione della firma crittografica deve ancora essere portata nel codice del microcontrollore. Per questo motivo, in questa fase, lo script `simulate-device.js` viene usato per simulare il comportamento finale atteso del dispositivo.
+Il firmware ESP32 attuale costruisce il payload firmato e può inviarlo al middleware. Lo script `simulate-device.js` resta comunque utile per testare il flusso completo senza dipendere dalla board fisica, dal WiFi o dal sensore.

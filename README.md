@@ -32,20 +32,21 @@ In questo modello il middleware non è considerato la fonte fidata del dato: il 
 
 ## Stato attuale dell'integrazione
 
-Il flusso firmato completo oggi è verificabile usando uno script Node.js che simula il comportamento logico del dispositivo:
+Il flusso firmato completo oggi è verificabile in due modi:
 
 ```text
 simulate-device.js -> Node.js middleware -> Smart Contract -> Web App
+ESP32 firmware -> Node.js middleware -> Smart Contract -> Web App
 ```
 
-Il firmware ESP32 attuale invia già una richiesta HTTP con i campi principali della misura, ma non genera ancora la firma crittografica richiesta dal middleware. Per questo motivo, in questa fase, lo script `middleware/scripts/simulate-device.js` viene usato per simulare il dispositivo firmante finale.
+Lo script `middleware/scripts/simulate-device.js` resta utile per testare rapidamente il flusso senza usare la board fisica. Il firmware ESP32 attuale costruisce invece il buffer compatibile con `abi.encodePacked(...)`, calcola il `dataHash`, genera una firma ECDSA secp256k1 e invia il payload firmato al middleware.
 
 | Componente         | Stato attuale                                                                                           | Obiettivo finale                                               |
 | ------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | Smart contract     | Registra dispositivi, verifica firme e nonce, salva misurazioni firmate.                                | Restare il punto di verità on-chain del sistema.               |
 | Middleware         | Riceve payload firmati, verifica API key, formato, registrazione, nonce e firma prima di inviare la tx. | Fare da gateway/relayer per dispositivi reali.                 |
-| Simulatore Node.js | Simula un dispositivo firmante e permette di testare il flusso completo.                                | Essere sostituito dal firmware ESP32 firmante.                 |
-| Firmware ESP32     | Simula misure, usa WiFi/HTTP/NTP e invia i campi principali della misura.                               | Firmare la misura e inviare il payload completo al middleware. |
+| Simulatore Node.js | Simula un dispositivo firmante e permette di testare il flusso completo senza board fisica.             | Restare uno strumento di test e debug.                         |
+| Firmware ESP32     | Legge una misura, usa WiFi/HTTP/NTP, calcola hash, firma e invia il payload completo al middleware.     | Essere verificato end-to-end su board fisica e rete reale.     |
 | Frontend           | Permette connessione MetaMask, registrazione device e lettura dati on-chain.                            | Restare interfaccia di configurazione e consultazione.         |
 
 ## Componenti principali
@@ -65,9 +66,11 @@ Stato attuale:
 
 * genera valori simulati;
 * sincronizza l'orario tramite NTP quando disponibile;
-* invia richieste HTTP al middleware;
-* include `deviceAddress`, `value`, `deviceTimestamp` e `nonce`;
-* non include ancora `signature` nel payload.
+* sincronizza il nonce dal middleware;
+* costruisce il buffer binario coerente con `abi.encodePacked(...)`;
+* calcola il `dataHash` con Keccak-256;
+* firma il messaggio con ECDSA secp256k1 usando la private key del dispositivo;
+* invia al middleware `deviceAddress`, `value`, `deviceTimestamp`, `nonce` e `signature`.
 
 Il payload finale atteso dal middleware ha questa struttura:
 
@@ -171,10 +174,9 @@ Il firmware attuale:
 
 * genera misurazioni simulate;
 * gestisce WiFi e timestamp;
-* prepara un payload HTTP;
-* invia la richiesta al middleware.
-
-La firma crittografica della misura deve ancora essere portata nel codice del microcontrollore.
+* sincronizza il nonce con il middleware;
+* calcola hash e firma della misura;
+* prepara e invia il payload HTTP firmato al middleware.
 
 ### `frontend/`
 
@@ -251,16 +253,23 @@ Il Makefile permette di automatizzare alcune operazioni ripetitive:
 ### Deploy del contratto
 
 ```bash
-make deploy
+make deploy-anvil
 ```
 
-Esegue il deploy dello smart contract su Anvil e aggiorna automaticamente il file:
+Esegue il deploy dello smart contract su Anvil e aggiorna automaticamente:
 
 ```text
 frontend/js/contract-address.js
+middleware/.env.anvil
 ```
 
 In questo modo la web app utilizza sempre l'indirizzo dell'ultimo contratto deployato, senza dover modificare manualmente il codice del frontend.
+
+Per Sepolia il comando equivalente è:
+
+```bash
+make deploy-sepolia
+```
 
 ### Visualizzazione dell'indirizzo del contratto
 
@@ -270,20 +279,24 @@ make show-address
 
 Mostra l'indirizzo del contratto attualmente configurato nel frontend.
 
-### Misura simulata diretta sul contratto
+### Misura simulata tramite middleware
 
 ```bash
-make record-measurement
+make simulate-device-anvil
 ```
 
-Invia una misurazione simulata direttamente allo smart contract usando `cast`.
+Invia una misurazione firmata tramite lo script Node.js che simula il dispositivo.
 
-Questo comando è utile per testare rapidamente il contratto, ma bypassa il middleware.
+Questo comando è utile per testare il flusso completo:
+
+```text
+simulatore -> middleware -> smart contract -> frontend
+```
 
 È possibile specificare un valore diverso della misurazione:
 
 ```bash
-make record-measurement VALUE=28
+make simulate-device-anvil VALUE=28
 ```
 
 ### Comandi del middleware
@@ -298,13 +311,13 @@ Durante lo sviluppo locale, il flusso tipico è:
 
 ```text
 1. Avviare Anvil
-2. Eseguire il deploy del contratto con make deploy
+2. Eseguire il deploy del contratto con `make deploy-anvil`
 3. Aprire la web app
 4. Collegare MetaMask alla rete locale Anvil
 5. Registrare un dispositivo dalla web app
 6. Configurare middleware/.env.anvil
 7. Avviare il middleware Node.js
-8. Inviare una misurazione firmata tramite lo script di simulazione Anvil
+8. Inviare una misurazione firmata tramite `make simulate-device-anvil` oppure tramite ESP32
 9. Leggere i dati aggiornati dalla web app
 ```
 
@@ -330,7 +343,7 @@ DEVICE_PRIVATE_KEY  -> firma il contenuto della misura
 RELAYER_PRIVATE_KEY -> paga il gas e invia la transazione
 ```
 
-Nel sistema finale il middleware non deve possedere la private key del dispositivo reale.
+Nel sistema finale il middleware non deve possedere la private key del dispositivo reale. Nel prototipo attuale, invece, la private key del dispositivo è configurata nel firmware ESP32 per permettere alla board di firmare le misure. È una scelta accettabile per una demo didattica, ma in un sistema reale la chiave andrebbe protetta meglio, ad esempio tramite secure element o meccanismi hardware dedicati.
 
 ## Stato del progetto
 
@@ -342,7 +355,7 @@ L'obiettivo non è realizzare un sistema IoT industriale completo per logistica 
 misurazione -> firma del dispositivo -> middleware -> smart contract -> lettura da web app
 ```
 
-Il flusso end-to-end firmato è attualmente dimostrato tramite un dispositivo simulato in Node.js. Il passaggio ancora aperto è portare la generazione della firma crittografica nel firmware ESP32.
+Il flusso end-to-end firmato è dimostrabile tramite dispositivo simulato in Node.js e tramite firmware ESP32 firmante. Il passaggio ancora aperto è completare e documentare i test su board fisica, rete reale e sensore reale.
 
 Il sistema permette quindi di studiare:
 

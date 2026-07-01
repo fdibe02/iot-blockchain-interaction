@@ -43,9 +43,23 @@ anvil
 
 ## Deploy
 
-Il comando di deploy verrà aggiornato quando sarà presente lo script definitivo.
+Il deploy può essere eseguito dalla root della repository usando gli script già collegati al `Makefile`.
 
-Esempio previsto:
+Su Anvil:
+
+```bash
+make deploy-anvil
+```
+
+Su Sepolia:
+
+```bash
+make deploy-sepolia
+```
+
+Gli script eseguono il deploy del contratto e aggiornano il file con l'indirizzo usato dal frontend. Per Anvil viene aggiornato anche `middleware/.env.anvil`.
+
+Comando Foundry equivalente:
 
 ```bash
 forge script script/DeployIoTDataStorage.s.sol:DeployIoTDataStorage \

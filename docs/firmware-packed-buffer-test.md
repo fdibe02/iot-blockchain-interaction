@@ -1,11 +1,11 @@
 # Firmware test packed buffer + dataHash
 
-Versione temporanea del firmware usata per verificare localmente:
+Questo documento descrive una fase intermedia del lavoro sul firmware, usata per verificare localmente:
 
 1. la costruzione del buffer binario compatibile con `abi.encodePacked(...)`;
 2. il calcolo del `dataHash` tramite Keccak-256 sul buffer packed.
 
-In questa fase non viene ancora generata la firma ECDSA e non viene inviato nulla al middleware.
+In questa fase di test non veniva ancora generata la firma ECDSA e non veniva inviato nulla al middleware. Il firmware principale attuale ha poi integrato anche firma ECDSA e invio HTTP del payload firmato.
 
 ## Parti di rete commentate
 
