@@ -49,6 +49,14 @@ const char* NONCE_URL = "http://192.168.1.50:3000/api/devices/0xDEVICE_ADDRESS/n
 
 Nota: se il server Node.js gira sul Mac, non bisogna usare localhost, ma l'indirizzo IP locale del Mac.
 
+Dopo un deploy tramite `make deploy-anvil` o `make deploy-sepolia`, lo script di deploy aggiorna automaticamente in `secrets.h` solo i valori pubblici/operativi:
+
+- `CONTRACT_ADDRESS`
+- `CHAIN_ID`
+- `NONCE_URL`
+
+Le variabili sensibili, come password WiFi, API key e private key del dispositivo, restano da configurare manualmente.
+
 ## Compilazione
 
 La compilazione è stata verificata tramite Arduino CLI:

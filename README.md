@@ -261,9 +261,10 @@ Esegue il deploy dello smart contract su Anvil e aggiorna automaticamente:
 ```text
 frontend/js/contract-address.js
 middleware/.env.anvil
+firmware/esp32-iot-data-chain/secrets.h
 ```
 
-In questo modo la web app utilizza sempre l'indirizzo dell'ultimo contratto deployato, senza dover modificare manualmente il codice del frontend.
+In questo modo la web app, il middleware e il firmware locale usano l'indirizzo dell'ultimo contratto deployato. Nel firmware vengono aggiornati solo valori pubblici o operativi (`CONTRACT_ADDRESS`, `CHAIN_ID`, `NONCE_URL`); WiFi, API key e private key restano manuali.
 
 Per Sepolia il comando equivalente è:
 

@@ -57,7 +57,7 @@ Su Sepolia:
 make deploy-sepolia
 ```
 
-Gli script eseguono il deploy del contratto e aggiornano il file con l'indirizzo usato dal frontend. Per Anvil viene aggiornato anche `middleware/.env.anvil`.
+Gli script eseguono il deploy del contratto e aggiornano il file con l'indirizzo usato dal frontend. Per Anvil viene aggiornato anche `middleware/.env.anvil`. Se `firmware/esp32-iot-data-chain/secrets.h` esiste, vengono aggiornati anche `CONTRACT_ADDRESS`, `CHAIN_ID` e `NONCE_URL` del firmware.
 
 Comando Foundry equivalente:
 
