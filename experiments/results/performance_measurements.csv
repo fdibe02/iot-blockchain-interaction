@@ -1,0 +1,1 @@
+experiment,network,storageMode,batchSize,sendIntervalSeconds,measurementIndex,txHash,blockNumber,status,gasUsed,effectiveGasPriceWei,feeWei,feeEth,requestBodyBytes,calldataBytes,txSubmitLatencyMs,confirmationLatencyMs,middlewareTotalLatencyMs,deviceToBlockLatencySeconds,logsCount

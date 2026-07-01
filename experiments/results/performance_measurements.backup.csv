@@ -1,0 +1,2 @@
+experiment,network,storageMode,batchSize,sendIntervalSeconds,measurementIndex,txHash,blockNumber,status,gasUsed,effectiveGasPriceWei,feeWei,feeEth,requestBodyBytes,calldataBytes,txSubmitLatencyMs,confirmationLatencyMs,middlewareTotalLatencyMs,deviceToBlockLatencySeconds,logsCount
+baseline,anvil,array,1,10,1,0x123abc,12,1,123456,1000000000,123456000000000,0.000123456,280,356,120,1500,1800,3,1
