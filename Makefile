@@ -6,6 +6,7 @@ FOUNDRY_DIR := foundry-iot-data-chain
 FIRMWARE_DIR := firmware/esp32-iot-data-chain
 FQBN ?= esp32:esp32:esp32
 PORT ?= /dev/cu.usbserial-0001
+FRONTEND_PORT ?= 8000
 
 VALUE ?=
 DEVICE_ADDRESS ?=
@@ -98,3 +99,6 @@ firmware-monitor:
 	@arduino-cli monitor -p $(PORT) -c baudrate=115200
 
 firmware-flash-monitor: firmware-upload firmware-monitor
+
+start-frontend:
+	@python3 -m http.server $(FRONTEND_PORT) -d frontend
