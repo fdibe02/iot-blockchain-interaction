@@ -33,7 +33,7 @@ const size_t SIGNATURE_RS_HEX_STRING_SIZE =
     HEX_PREFIX_SIZE + SIGNATURE_RS_SIZE * 2 + NULL_TERMINATOR_SIZE;
 
 // Ogni quanto inviare misura
-const unsigned long SEND_INTERVAL_MS = 20000;  // 20 secondi
+const unsigned long SEND_INTERVAL_MS = 10000;  // 10 secondi
 
 const int32_t HTTP_CONNECT_TIMEOUT_MS = 5000;
 const uint16_t HTTP_RESPONSE_TIMEOUT_MS = 15000;
