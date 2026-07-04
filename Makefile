@@ -9,10 +9,12 @@ PORT ?= /dev/cu.usbserial-0001
 FRONTEND_PORT ?= 8000
 
 VALUE ?=
+BATCH ?= 3
+BATCH_FLUSH_MS ?= 0
 DEVICE_ADDRESS ?=
 METADATA_URI ?= esp32-laboratorio
 
-.PHONY: install check check-js check-scripts build-contract test-contract fmt-contract fmt-contract-check deploy-anvil start-middleware-anvil health-anvil register-device-anvil simulate-device-anvil verify-hash-anvil test-negative-anvil show-address deploy-sepolia start-middleware-sepolia health-sepolia register-device-sepolia simulate-device-sepolia verify-hash-sepolia test-negative-sepolia firmware-compile firmware-upload firmware-monitor firmware-flash-monitor
+.PHONY: install check check-js check-scripts build-contract test-contract fmt-contract fmt-contract-check deploy-anvil start-middleware-anvil health-anvil register-device-anvil simulate-device-anvil verify-hash-anvil test-negative-anvil show-address deploy-sepolia start-middleware-sepolia health-sepolia register-device-sepolia simulate-device-sepolia verify-hash-sepolia test-negative-sepolia firmware-compile firmware-upload firmware-monitor firmware-flash-monitor simulate-buffered-anvil start-middleware-sepolia-batch simulate-buffered-sepolia 
 
 install:
 	@npm --prefix middleware install
@@ -27,6 +29,7 @@ check-js:
 	@node --check middleware/scripts/test-negative-measurements.js
 	@node --check middleware/scripts/verify-hash-consistency.js
 	@node --check scripts/update-firmware-config.js
+	@node --check middleware/scripts/simulate-buffered-measurements.js
 
 check-scripts:
 	@bash -n scripts/deploy-anvil.sh
@@ -71,6 +74,9 @@ deploy-sepolia:
 start-middleware-sepolia:
 	@npm --prefix middleware run dev:sepolia
 
+start-middleware-sepolia-batch:
+	@TX_MODE=batch BATCH_SIZE=$(BATCH) BATCH_FLUSH_MS=$(BATCH_FLUSH_MS) npm --prefix middleware run dev:sepolia
+
 health-sepolia:
 	@curl -sS http://localhost:3000/health
 
@@ -79,6 +85,12 @@ register-device-sepolia:
 
 simulate-device-sepolia:
 	@npm --prefix middleware run simulate-device:sepolia -- $(VALUE)
+
+simulate-buffered-anvil:
+	@MEASUREMENT_VALUE="$(VALUE)" npm --prefix middleware run simulate-buffered:anvil -- $(BATCH)
+
+simulate-buffered-sepolia:
+	@MEASUREMENT_VALUE="$(VALUE)" npm --prefix middleware run simulate-buffered:sepolia -- $(BATCH)
 
 verify-hash-sepolia:
 	@npm --prefix middleware run verify-hash:sepolia

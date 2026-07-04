@@ -1,0 +1,227 @@
+import "dotenv/config";
+
+import { ethers } from "ethers";
+
+const RPC_URL = process.env.RPC_URL;
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
+const DEVICE_API_KEY = process.env.DEVICE_API_KEY;
+const DEVICE_PRIVATE_KEY = process.env.DEVICE_PRIVATE_KEY;
+const MIDDLEWARE_URL =
+    process.env.MIDDLEWARE_URL ?? "http://localhost:3000/api/measurements";
+
+const MEASUREMENT_VALUE = process.env.MEASUREMENT_VALUE ?? "25";
+const MEASUREMENTS_COUNT = Number(
+    process.argv[2] ?? process.env.MEASUREMENTS_COUNT ?? 1,
+);
+const IOT_DATA_STORAGE_ABI = [
+    "function getDevice(address deviceAddress) view returns (tuple(bool isRegistered, string metadataURI, uint256 registeredAt))",
+    "function getLastNonce(address deviceAddress) view returns (uint256)",
+];
+
+validateEnvironment();
+
+const contractAddress = ethers.getAddress(CONTRACT_ADDRESS);
+
+const provider = new ethers.JsonRpcProvider(RPC_URL);
+
+const deviceWallet = new ethers.Wallet(DEVICE_PRIVATE_KEY, provider);
+
+const iotDataStorage = new ethers.Contract(
+    contractAddress,
+    IOT_DATA_STORAGE_ABI,
+    provider,
+);
+
+async function main() {
+    if (!Number.isInteger(MEASUREMENTS_COUNT) || MEASUREMENTS_COUNT <= 0) {
+        throw new Error("MEASUREMENTS_COUNT deve essere un intero positivo");
+    }
+
+    const deviceAddress = await deviceWallet.getAddress();
+
+    await assertDeviceIsRegistered(deviceAddress);
+
+    console.log("Device simulato:", deviceAddress);
+    console.log("Misure da inviare:", MEASUREMENTS_COUNT);
+    console.log("Endpoint middleware:", MIDDLEWARE_URL);
+    console.log("");
+
+    for (let i = 0; i < MEASUREMENTS_COUNT; i++) {
+        const nextNonce = await fetchNextNonceFromMiddleware(deviceAddress);
+        const value = parseInteger(MEASUREMENT_VALUE, "MEASUREMENT_VALUE") + BigInt(i);
+        const deviceTimestamp = BigInt(Math.floor(Date.now() / 1000)) + BigInt(i);
+
+        const dataHash = await getMeasurementHashLocal({
+            deviceAddress,
+            value,
+            deviceTimestamp,
+            nonce: nextNonce,
+        });
+
+        const signature = await deviceWallet.signMessage(ethers.getBytes(dataHash));
+
+        assertSignatureMatchesDevice(dataHash, signature, deviceAddress);
+
+        const payload = {
+            deviceAddress,
+            value: value.toString(),
+            deviceTimestamp: deviceTimestamp.toString(),
+            nonce: nextNonce.toString(),
+            signature,
+        };
+
+        const response = await fetch(MIDDLEWARE_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-API-Key": DEVICE_API_KEY,
+            },
+            body: JSON.stringify(payload),
+        });
+
+        const responseBody = await readJsonOrText(response);
+
+        if (!response.ok) {
+            throw new Error(
+                `Middleware errore ${response.status}: ${JSON.stringify(responseBody)}`,
+            );
+        }
+
+        console.log(`Misura ${i + 1}/${MEASUREMENTS_COUNT}`);
+        console.log(responseBody);
+        console.log("");
+    }
+}
+
+async function fetchNextNonceFromMiddleware(deviceAddress) {
+    const nonceUrl = buildNonceUrl(deviceAddress);
+
+    const response = await fetch(nonceUrl, {
+        headers: {
+            "X-API-Key": DEVICE_API_KEY,
+        },
+    });
+
+    const responseBody = await readJsonOrText(response);
+
+    if (!response.ok) {
+        throw new Error(
+            `Errore nonce ${response.status}: ${JSON.stringify(responseBody)}`,
+        );
+    }
+
+    return BigInt(responseBody.nextNonce);
+}
+
+function buildNonceUrl(deviceAddress) {
+    const url = new URL(MIDDLEWARE_URL);
+    url.pathname = `/api/devices/${deviceAddress}/nonce`;
+    url.search = "";
+
+    return url.toString();
+}
+
+async function readJsonOrText(response) {
+    const text = await response.text();
+
+    try {
+        return JSON.parse(text);
+    } catch {
+        return text;
+    }
+}
+
+function assertSignatureMatchesDevice(dataHash, signature, deviceAddress) {
+    const recoveredAddress = ethers.verifyMessage(
+        ethers.getBytes(dataHash),
+        signature,
+    );
+
+    if (ethers.getAddress(recoveredAddress) !== ethers.getAddress(deviceAddress)) {
+        throw new Error(
+            `Firma non valida: recovered=${recoveredAddress}, expected=${deviceAddress}`
+        );
+    }
+}
+
+async function assertDeviceIsRegistered(deviceAddress) {
+    const device = await iotDataStorage.getDevice(deviceAddress);
+
+    if (!device.isRegistered) {
+        throw new Error(
+            `Device non registrato: ${deviceAddress}. Registralo prima nel contratto.`,
+        );
+    }
+}
+
+async function getMeasurementHashLocal({
+    deviceAddress,
+    value,
+    deviceTimestamp,
+    nonce,
+}) {
+    const network = await provider.getNetwork();
+
+    return ethers.solidityPackedKeccak256(
+        ["address", "uint256", "address", "int256", "uint256", "uint256"],
+        [
+            contractAddress,
+            network.chainId,
+            deviceAddress,
+            value,
+            deviceTimestamp,
+            nonce,
+        ]
+    );
+}
+
+function parseInteger(value, variableName) {
+    const stringValue = String(value);
+
+    if (!/^-?\d+$/.test(stringValue)) {
+        throw new Error(`${variableName} deve essere un intero`);
+    }
+
+    return BigInt(stringValue);
+}
+
+function validateEnvironment() {
+    const missingVariables = [];
+
+    if (!RPC_URL) {
+        missingVariables.push("RPC_URL");
+    }
+
+    if (!CONTRACT_ADDRESS) {
+        missingVariables.push("CONTRACT_ADDRESS");
+    }
+
+    if (!DEVICE_API_KEY) {
+        missingVariables.push("DEVICE_API_KEY");
+    }
+
+    if (!DEVICE_PRIVATE_KEY) {
+        missingVariables.push("DEVICE_PRIVATE_KEY");
+    }
+
+    if (missingVariables.length > 0) {
+        throw new Error(
+            `Variabili d'ambiente mancanti: ${missingVariables.join(", ")}`,
+        );
+    }
+
+    if (!ethers.isAddress(CONTRACT_ADDRESS)) {
+        throw new Error("CONTRACT_ADDRESS non è un address Ethereum valido");
+    }
+
+    if (!ethers.isHexString(DEVICE_PRIVATE_KEY, 32)) {
+        throw new Error(
+            "DEVICE_PRIVATE_KEY deve essere una private key esadecimale da 32 byte",
+        );
+    }
+}
+
+main().catch(function onError(error) {
+    console.error(error);
+    process.exitCode = 1;
+});
