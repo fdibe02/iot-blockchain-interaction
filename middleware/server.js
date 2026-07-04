@@ -10,6 +10,10 @@ const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const RELAYER_PRIVATE_KEY = process.env.RELAYER_PRIVATE_KEY;
 const DEVICE_API_KEY = process.env.DEVICE_API_KEY;
 const CONFIRMATIONS = Number(process.env.CONFIRMATIONS ?? 1);
+//costanti configurazione batch vs single measurements
+const TX_MODE = process.env.TX_MODE ?? "single";
+const BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 1);
+const BATCH_FLUSH_MS = Number(process.env.BATCH_FLUSH_MS ?? 0);
 
 // per normalizzare la parte s della signature
 const SECP256K1_N =
@@ -25,6 +29,7 @@ const IOT_DATA_STORAGE_ABI = [
     "function getLastNonce(address deviceAddress) view returns (uint256)",
     "function getMeasurementHash(address deviceAddress, int256 value, uint256 deviceTimestamp, uint256 nonce) view returns (bytes32)",
     "function recordSignedMeasurement(address deviceAddress, int256 value, uint256 deviceTimestamp, uint256 nonce, bytes signature)",
+    "function recordSignedMeasurements(address deviceAddress, int256[] values, uint256[] deviceTimestamps, uint256[] nonces, bytes[] signatures)",
 ];
 
 const INT256_MIN = -(1n << 255n);
@@ -32,6 +37,10 @@ const INT256_MAX = (1n << 255n) - 1n;
 const UINT256_MAX = UINT256_MASK;
 
 const pendingLastNonceByDevice = new Map();
+// mappe per il buffer
+const measurementBuffersByDevice = new Map();
+const flushTimersByDevice = new Map();
+
 
 // classe per errori HTTP
 class HttpError extends Error {
@@ -142,51 +151,201 @@ async function getDeviceNonce(req, res, next) {
 
 async function recordMeasurement(req, res, next) {
     try {
-        // Prima valido e normalizzo il payload ricevuto dall'ESP32.
-        // Poi controllo device registrato e nonce, così evito transazioni inutili.
         const measurement = parseMeasurementRequest(req);
 
         await assertDeviceIsRegistered(measurement.deviceAddress);
-        await assertNonceIsFresh(measurement.deviceAddress, measurement.nonce);
 
-        // Calcolo locale dell'hash, senza chiamare getMeasurementHash sul contratto.
-        const dataHash = await getMeasurementHashLocal(measurement);
+        if (TX_MODE === "single") {
+            await submitSingleMeasurement(measurement, res);
+            return;
+        }
 
-        const signatureForContract = normalizeSignatureForContract(
-            dataHash,
-            measurement.signature,
-            measurement.deviceAddress
-        );
+        await bufferMeasurement(measurement, res);
+    } catch (error) {
+        next(error);
+    }
+}
 
-        // Invio la transazione alla rete, ma non blocco la risposta HTTP
-        // aspettando mining/conferme blockchain.
-        const transactionResponse = await iotDataStorage.recordSignedMeasurement(
+// corpo funzione route singola
+async function submitSingleMeasurement(measurement, res) {
+    await assertNonceIsFresh(measurement.deviceAddress, measurement.nonce);
+
+    const dataHash = await getMeasurementHashLocal(measurement);
+
+    const signatureForContract = normalizeSignatureForContract(
+        dataHash,
+        measurement.signature,
+        measurement.deviceAddress,
+    );
+
+    const transactionResponse = await iotDataStorage.recordSignedMeasurement(
+        measurement.deviceAddress,
+        measurement.value,
+        measurement.deviceTimestamp,
+        measurement.nonce,
+        signatureForContract,
+    );
+
+    rememberPendingNonce(measurement.deviceAddress, measurement.nonce);
+
+    logTransactionConfirmationInBackground(
+        transactionResponse,
+        measurement,
+        dataHash,
+    );
+
+    res.status(202).json({
+        status: "submitted",
+        mode: "single",
+        transactionHash: transactionResponse.hash,
+        deviceAddress: measurement.deviceAddress,
+        value: measurement.value.toString(),
+        deviceTimestamp: measurement.deviceTimestamp.toString(),
+        nonce: measurement.nonce.toString(),
+        dataHash,
+    });
+}
+
+async function bufferMeasurement(measurement, res) {
+    await assertNonceIsFreshForBuffer(
+        measurement.deviceAddress,
+        measurement.nonce,
+    );
+
+    const dataHash = await getMeasurementHashLocal(measurement);
+
+    const signatureForContract = normalizeSignatureForContract(
+        dataHash,
+        measurement.signature,
+        measurement.deviceAddress,
+    );
+
+    const bufferedMeasurement = {
+        ...measurement,
+        dataHash,
+        signatureForContract,
+    };
+
+    const buffer = getMeasurementBuffer(measurement.deviceAddress);
+
+    buffer.push(bufferedMeasurement);
+
+    if (BATCH_FLUSH_MS > 0 && buffer.length === 1) {
+        scheduleBatchFlush(measurement.deviceAddress);
+    }
+
+    if (buffer.length >= BATCH_SIZE) {
+        const batchResult = await flushMeasurementBuffer(
             measurement.deviceAddress,
-            measurement.value,
-            measurement.deviceTimestamp,
-            measurement.nonce,
-            signatureForContract
-        );
-
-        rememberPendingNonce(measurement.deviceAddress, measurement.nonce);
-
-        logTransactionConfirmationInBackground(
-            transactionResponse,
-            measurement,
-            dataHash,
         );
 
         res.status(202).json({
             status: "submitted",
-            transactionHash: transactionResponse.hash,
+            mode: "batch",
+            transactionHash: batchResult.transactionHash,
             deviceAddress: measurement.deviceAddress,
-            value: measurement.value.toString(),
-            deviceTimestamp: measurement.deviceTimestamp.toString(),
-            nonce: measurement.nonce.toString(),
-            dataHash,
+            batchSize: batchResult.batchSize,
+            firstNonce: batchResult.firstNonce.toString(),
+            lastNonce: batchResult.lastNonce.toString(),
         });
-    } catch (error) {
-        next(error);
+
+        return;
+    }
+
+    res.status(202).json({
+        status: "buffered",
+        mode: "batch",
+        deviceAddress: measurement.deviceAddress,
+        nonce: measurement.nonce.toString(),
+        bufferSize: buffer.length,
+        batchSize: BATCH_SIZE,
+    });
+}
+
+function getMeasurementBuffer(deviceAddress) {
+    const existingBuffer = measurementBuffersByDevice.get(deviceAddress);
+
+    if (existingBuffer !== undefined) {
+        return existingBuffer;
+    }
+
+    const newBuffer = [];
+    measurementBuffersByDevice.set(deviceAddress, newBuffer);
+
+    return newBuffer;
+}
+
+async function assertNonceIsFreshForBuffer(deviceAddress, nonce) {
+    const lastNonce = await getEffectiveLastNonce(deviceAddress);
+    const buffer = getMeasurementBuffer(deviceAddress);
+
+    const lastBufferedNonce =
+        buffer.length === 0 ? 0n : buffer[buffer.length - 1].nonce;
+
+    const effectiveLastNonce =
+        lastNonce > lastBufferedNonce ? lastNonce : lastBufferedNonce;
+
+    if (nonce <= effectiveLastNonce) {
+        throw new HttpError(409, "Nonce già usato, pending o non crescente");
+    }
+}
+
+async function flushMeasurementBuffer(deviceAddress) {
+    const buffer = getMeasurementBuffer(deviceAddress);
+
+    if (buffer.length === 0) {
+        throw new HttpError(400, "Buffer batch vuoto");
+    }
+
+    clearBatchFlushTimer(deviceAddress);
+
+    const measurementsToSubmit = buffer.splice(0, BATCH_SIZE);
+
+    const transactionResponse = await iotDataStorage.recordSignedMeasurements(
+        deviceAddress,
+        measurementsToSubmit.map((measurement) => measurement.value),
+        measurementsToSubmit.map((measurement) => measurement.deviceTimestamp),
+        measurementsToSubmit.map((measurement) => measurement.nonce),
+        measurementsToSubmit.map((measurement) => measurement.signatureForContract),
+    );
+
+    const firstMeasurement = measurementsToSubmit[0];
+    const lastMeasurement = measurementsToSubmit[measurementsToSubmit.length - 1];
+
+    rememberPendingNonce(deviceAddress, lastMeasurement.nonce);
+
+    logBatchTransactionConfirmationInBackground(
+        transactionResponse,
+        deviceAddress,
+        measurementsToSubmit,
+    );
+
+    return {
+        transactionHash: transactionResponse.hash,
+        batchSize: measurementsToSubmit.length,
+        firstNonce: firstMeasurement.nonce,
+        lastNonce: lastMeasurement.nonce,
+    };
+}
+
+function scheduleBatchFlush(deviceAddress) {
+    clearBatchFlushTimer(deviceAddress);
+
+    const timer = setTimeout(() => {
+        flushMeasurementBuffer(deviceAddress).catch((error) => {
+            console.error(`Errore flush batch device=${deviceAddress}:`, error);
+        });
+    }, BATCH_FLUSH_MS);
+
+    flushTimersByDevice.set(deviceAddress, timer);
+}
+
+function clearBatchFlushTimer(deviceAddress) {
+    const timer = flushTimersByDevice.get(deviceAddress);
+
+    if (timer !== undefined) {
+        clearTimeout(timer);
+        flushTimersByDevice.delete(deviceAddress);
     }
 }
 
@@ -227,6 +386,46 @@ function logTransactionConfirmationInBackground(
 
             console.error(
                 `Errore conferma transazione ${transactionResponse.hash}:`,
+                error,
+            );
+        });
+}
+
+function logBatchTransactionConfirmationInBackground(
+    transactionResponse,
+    deviceAddress,
+    measurements,
+) {
+    const lastMeasurement = measurements[measurements.length - 1];
+
+    if (CONFIRMATIONS === 0) {
+        console.log(
+            `Transazione batch inviata: ${transactionResponse.hash} ` +
+            `batchSize=${measurements.length} ` +
+            `lastNonce=${lastMeasurement.nonce.toString()}`,
+        );
+        return;
+    }
+
+    transactionResponse
+        .wait(CONFIRMATIONS)
+        .then((receipt) => {
+            forgetPendingNonceIfCurrent(deviceAddress, lastMeasurement.nonce);
+
+            console.log(
+                `Transazione batch confermata: ${transactionResponse.hash} ` +
+                `block=${receipt?.blockNumber ?? "n/d"} ` +
+                `device=${deviceAddress} ` +
+                `batchSize=${measurements.length} ` +
+                `firstNonce=${measurements[0].nonce.toString()} ` +
+                `lastNonce=${lastMeasurement.nonce.toString()}`,
+            );
+        })
+        .catch((error) => {
+            forgetPendingNonceIfCurrent(deviceAddress, lastMeasurement.nonce);
+
+            console.error(
+                `Errore conferma transazione batch ${transactionResponse.hash}:`,
                 error,
             );
         });
@@ -540,6 +739,18 @@ function validateEnvironment() {
 
     if (!Number.isInteger(CONFIRMATIONS) || CONFIRMATIONS < 0) {
         throw new Error("CONFIRMATIONS deve essere un intero maggiore o uguale a zero");
+    }
+
+    if (TX_MODE !== "single" && TX_MODE !== "batch") {
+        throw new Error("TX_MODE deve essere single oppure batch");
+    }
+
+    if (!Number.isInteger(BATCH_SIZE) || BATCH_SIZE <= 0) {
+        throw new Error("BATCH_SIZE deve essere un intero positivo");
+    }
+
+    if (!Number.isInteger(BATCH_FLUSH_MS) || BATCH_FLUSH_MS < 0) {
+        throw new Error("BATCH_FLUSH_MS deve essere un intero maggiore o uguale a zero");
     }
 }
 
