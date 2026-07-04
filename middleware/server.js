@@ -125,10 +125,17 @@ async function getDeviceNonce(req, res, next) {
         const pendingLastNonce =
             pendingLastNonceByDevice.get(normalizedDeviceAddress) ?? 0n;
 
-        const effectiveLastNonce =
-            lastNonceOnChain > pendingLastNonce
-                ? lastNonceOnChain
-                : pendingLastNonce;
+        const bufferedLastNonce = getLastBufferedNonce(normalizedDeviceAddress);
+
+        let effectiveLastNonce = lastNonceOnChain;
+
+        if (pendingLastNonce > effectiveLastNonce) {
+            effectiveLastNonce = pendingLastNonce;
+        }
+
+        if (bufferedLastNonce > effectiveLastNonce) {
+            effectiveLastNonce = bufferedLastNonce;
+        }
 
         const nextNonce = effectiveLastNonce + 1n;
 
@@ -139,6 +146,7 @@ async function getDeviceNonce(req, res, next) {
             // Valore usato davvero dal firmware per calcolare nextNonce.
             lastNonce: effectiveLastNonce.toString(),
             nextNonce: nextNonce.toString(),
+            bufferedLastNonce: bufferedLastNonce.toString(),
 
             // Campi utili solo per debug/log.
             onChainLastNonce: lastNonceOnChain.toString(),
@@ -275,6 +283,16 @@ function getMeasurementBuffer(deviceAddress) {
     return newBuffer;
 }
 
+function getLastBufferedNonce(deviceAddress) {
+    const buffer = measurementBuffersByDevice.get(deviceAddress);
+
+    if (buffer === undefined || buffer.length === 0) {
+        return 0n;
+    }
+
+    return buffer[buffer.length - 1].nonce;
+}
+
 async function assertNonceIsFreshForBuffer(deviceAddress, nonce) {
     const lastNonce = await getEffectiveLastNonce(deviceAddress);
     const buffer = getMeasurementBuffer(deviceAddress);
@@ -301,31 +319,41 @@ async function flushMeasurementBuffer(deviceAddress) {
 
     const measurementsToSubmit = buffer.splice(0, BATCH_SIZE);
 
-    const transactionResponse = await iotDataStorage.recordSignedMeasurements(
-        deviceAddress,
-        measurementsToSubmit.map((measurement) => measurement.value),
-        measurementsToSubmit.map((measurement) => measurement.deviceTimestamp),
-        measurementsToSubmit.map((measurement) => measurement.nonce),
-        measurementsToSubmit.map((measurement) => measurement.signatureForContract),
-    );
+    try {
+        const transactionResponse = await iotDataStorage.recordSignedMeasurements(
+            deviceAddress,
+            measurementsToSubmit.map((measurement) => measurement.value),
+            measurementsToSubmit.map((measurement) => measurement.deviceTimestamp),
+            measurementsToSubmit.map((measurement) => measurement.nonce),
+            measurementsToSubmit.map((measurement) => measurement.signatureForContract),
+        );
 
-    const firstMeasurement = measurementsToSubmit[0];
-    const lastMeasurement = measurementsToSubmit[measurementsToSubmit.length - 1];
+        const firstMeasurement = measurementsToSubmit[0];
+        const lastMeasurement = measurementsToSubmit[measurementsToSubmit.length - 1];
 
-    rememberPendingNonce(deviceAddress, lastMeasurement.nonce);
+        rememberPendingNonce(deviceAddress, lastMeasurement.nonce);
 
-    logBatchTransactionConfirmationInBackground(
-        transactionResponse,
-        deviceAddress,
-        measurementsToSubmit,
-    );
+        logBatchTransactionConfirmationInBackground(
+            transactionResponse,
+            deviceAddress,
+            measurementsToSubmit,
+        );
 
-    return {
-        transactionHash: transactionResponse.hash,
-        batchSize: measurementsToSubmit.length,
-        firstNonce: firstMeasurement.nonce,
-        lastNonce: lastMeasurement.nonce,
-    };
+        return {
+            transactionHash: transactionResponse.hash,
+            batchSize: measurementsToSubmit.length,
+            firstNonce: firstMeasurement.nonce,
+            lastNonce: lastMeasurement.nonce,
+        };
+    } catch (error) {
+        buffer.unshift(...measurementsToSubmit);
+
+        if (BATCH_FLUSH_MS > 0) {
+            scheduleBatchFlush(deviceAddress);
+        }
+
+        throw error;
+    }
 }
 
 function scheduleBatchFlush(deviceAddress) {
@@ -549,8 +577,19 @@ async function assertNonceIsFresh(deviceAddress, nonce) {
 async function getEffectiveLastNonce(deviceAddress) {
     const lastNonceOnChain = await iotDataStorage.getLastNonce(deviceAddress);
     const pendingLastNonce = pendingLastNonceByDevice.get(deviceAddress) ?? 0n;
+    const bufferedLastNonce = getLastBufferedNonce(deviceAddress);
 
-    return lastNonceOnChain > pendingLastNonce ? lastNonceOnChain : pendingLastNonce;
+    let effectiveLastNonce = lastNonceOnChain;
+
+    if (pendingLastNonce > effectiveLastNonce) {
+        effectiveLastNonce = pendingLastNonce;
+    }
+
+    if (bufferedLastNonce > effectiveLastNonce) {
+        effectiveLastNonce = bufferedLastNonce;
+    }
+
+    return effectiveLastNonce;
 }
 
 function rememberPendingNonce(deviceAddress, nonce) {
