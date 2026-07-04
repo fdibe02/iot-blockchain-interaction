@@ -13,6 +13,7 @@ contract IoTDataStorage {
     error IoTDataStorage__NoMeasurements();
     error IoTDataStorage__InvalidSignature(); // firma falsa o fatta da un altro wallet
     error IoTDataStorage__InvalidNonce(); // nonce già usato
+    error IoTDataStorage__InvalidBatch();
 
     struct Device {
         //rappresenta un dispositivo IoT
@@ -36,7 +37,8 @@ contract IoTDataStorage {
     mapping(address deviceAddress => Device device) private s_devices;
 
     // Mapping delle misurazioni
-    mapping(address deviceAddress => Measurement[] measurements) private s_measurements;
+    mapping(address deviceAddress => Measurement[] measurements)
+        private s_measurements;
 
     mapping(address deviceAddress => uint256 lastNonce) private s_lastNonce; // salva ultimo nonce accettato per ogni dispositivo
 
@@ -74,7 +76,10 @@ contract IoTDataStorage {
         i_owner = msg.sender; // salviamo come owner l'indirizzo di chi ha deployato il contratto
     }
 
-    function registerDevice(address deviceAddress, string calldata metadataURI) external onlyOwner {
+    function registerDevice(
+        address deviceAddress,
+        string calldata metadataURI
+    ) external onlyOwner {
         // usiamo calldata perchè piu efficiente, non viene copiata inutilmente in meoria
         // external cosi la funzione puo essere chiamata dall'esterno del contratto
         // solo l'Owner può registrare i dispositivi
@@ -83,7 +88,11 @@ contract IoTDataStorage {
             revert IoTDataStorage__DeviceAlreadyRegistered();
         }
 
-        s_devices[deviceAddress] = Device({isRegistered: true, metadataURI: metadataURI, registeredAt: block.timestamp});
+        s_devices[deviceAddress] = Device({
+            isRegistered: true,
+            metadataURI: metadataURI,
+            registeredAt: block.timestamp
+        });
 
         emit DeviceRegistered(deviceAddress, metadataURI);
     }
@@ -95,20 +104,75 @@ contract IoTDataStorage {
         uint256 nonce,
         bytes calldata signature
     ) external onlyRegisteredDevice(deviceAddress) {
-        // per ora mettiamo solo una valore numerico. poi potremmo aggiungere di verse grandezze misurate
-        if (nonce <= s_lastNonce[deviceAddress]) {
+        s_lastNonce[deviceAddress] = _recordSignedMeasurement(
+            deviceAddress,
+            value,
+            deviceTimestamp,
+            nonce,
+            signature,
+            s_lastNonce[deviceAddress]
+        );
+    }
+    // msg.sender identifica chi ha inviato la transazione
+
+    function recordSignedMeasurements(
+        address deviceAddress,
+        int256[] calldata values,
+        uint256[] calldata deviceTimestamps,
+        uint256[] calldata nonces,
+        bytes[] calldata signatures
+    ) external onlyRegisteredDevice(deviceAddress) {
+        uint256 measurementsCount = values.length;
+
+        if (
+            measurementsCount == 0 ||
+            deviceTimestamps.length != measurementsCount ||
+            nonces.length != measurementsCount ||
+            signatures.length != measurementsCount
+        ) {
+            revert IoTDataStorage__InvalidBatch();
+        }
+
+        uint256 previousNonce = s_lastNonce[deviceAddress];
+
+        for (uint256 i = 0; i < measurementsCount; i++) {
+            previousNonce = _recordSignedMeasurement(
+                deviceAddress,
+                values[i],
+                deviceTimestamps[i],
+                nonces[i],
+                signatures[i],
+                previousNonce
+            );
+        }
+
+        s_lastNonce[deviceAddress] = previousNonce;
+    }
+
+    function _recordSignedMeasurement(
+        address deviceAddress,
+        int256 value,
+        uint256 deviceTimestamp,
+        uint256 nonce,
+        bytes calldata signature,
+        uint256 previousNonce
+    ) private returns (uint256) {
+        if (nonce <= previousNonce) {
             revert IoTDataStorage__InvalidNonce();
         }
 
-        bytes32 dataHash = getMeasurementHash(deviceAddress, value, deviceTimestamp, nonce);
+        bytes32 dataHash = getMeasurementHash(
+            deviceAddress,
+            value,
+            deviceTimestamp,
+            nonce
+        );
 
         address signer = dataHash.toEthSignedMessageHash().recover(signature);
 
         if (signer != deviceAddress) {
             revert IoTDataStorage__InvalidSignature();
         }
-
-        s_lastNonce[deviceAddress] = nonce;
 
         s_measurements[deviceAddress].push(
             Measurement({
@@ -120,21 +184,37 @@ contract IoTDataStorage {
             })
         );
 
-        emit MeasurementRecorded(deviceAddress, msg.sender, value, deviceTimestamp, block.timestamp, nonce, dataHash);
+        emit MeasurementRecorded(
+            deviceAddress,
+            msg.sender,
+            value,
+            deviceTimestamp,
+            block.timestamp,
+            nonce,
+            dataHash
+        );
+
+        return nonce;
     }
-    // msg.sender identifica chi ha inviato la transazione
 
     // GETTERS
 
-    function getDevice(address deviceAddress) external view returns (Device memory) {
+    function getDevice(
+        address deviceAddress
+    ) external view returns (Device memory) {
         return s_devices[deviceAddress];
     }
 
-    function getMeasurement(address deviceAddress, uint256 index) external view returns (Measurement memory) {
+    function getMeasurement(
+        address deviceAddress,
+        uint256 index
+    ) external view returns (Measurement memory) {
         return s_measurements[deviceAddress][index];
     }
 
-    function getLatestMeasurement(address deviceAddress)
+    function getLatestMeasurement(
+        address deviceAddress
+    )
         external
         view
         onlyRegisteredDevice(deviceAddress)
@@ -149,7 +229,9 @@ contract IoTDataStorage {
         return s_measurements[deviceAddress][measurementsCount - 1];
     }
 
-    function getMeasurementCount(address deviceAddress) external view returns (uint256) {
+    function getMeasurementCount(
+        address deviceAddress
+    ) external view returns (uint256) {
         return s_measurements[deviceAddress].length;
     }
 
@@ -157,15 +239,28 @@ contract IoTDataStorage {
         return i_owner;
     }
 
-    function getMeasurementHash(address deviceAddress, int256 value, uint256 deviceTimestamp, uint256 nonce)
-        public
-        view
-        returns (bytes32)
-    {
-        return keccak256(abi.encodePacked(address(this), block.chainid, deviceAddress, value, deviceTimestamp, nonce));
+    function getMeasurementHash(
+        address deviceAddress,
+        int256 value,
+        uint256 deviceTimestamp,
+        uint256 nonce
+    ) public view returns (bytes32) {
+        return
+            keccak256(
+                abi.encodePacked(
+                    address(this),
+                    block.chainid,
+                    deviceAddress,
+                    value,
+                    deviceTimestamp,
+                    nonce
+                )
+            );
     }
 
-    function getLastNonce(address deviceAddress) external view returns (uint256) {
+    function getLastNonce(
+        address deviceAddress
+    ) external view returns (uint256) {
         return s_lastNonce[deviceAddress];
     }
 
