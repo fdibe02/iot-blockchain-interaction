@@ -14,7 +14,7 @@ BATCH_FLUSH_MS ?= 0
 DEVICE_ADDRESS ?=
 METADATA_URI ?= esp32-laboratorio
 
-.PHONY: install check check-js check-scripts build-contract test-contract fmt-contract fmt-contract-check deploy-anvil start-middleware-anvil health-anvil register-device-anvil simulate-device-anvil verify-hash-anvil test-negative-anvil show-address deploy-sepolia start-middleware-sepolia health-sepolia register-device-sepolia simulate-device-sepolia verify-hash-sepolia test-negative-sepolia firmware-compile firmware-upload firmware-monitor firmware-flash-monitor simulate-buffered-anvil start-middleware-sepolia-batch simulate-buffered-sepolia 
+.PHONY: install check check-js check-scripts build-contract test-contract fmt-contract fmt-contract-check deploy-anvil start-middleware-anvil start-middleware-anvil-batch health-anvil register-device-anvil simulate-device-anvil verify-hash-anvil test-negative-anvil show-address deploy-sepolia start-middleware-sepolia health-sepolia register-device-sepolia simulate-device-sepolia verify-hash-sepolia test-negative-sepolia firmware-compile firmware-upload firmware-monitor firmware-flash-monitor simulate-buffered-anvil start-middleware-sepolia-batch simulate-buffered-sepolia 
 
 install:
 	@npm --prefix middleware install
@@ -52,6 +52,9 @@ deploy-anvil:
 
 start-middleware-anvil:
 	@npm --prefix middleware run dev:anvil
+
+start-middleware-anvil-batch:
+	@TX_MODE=batch BATCH_SIZE=$(BATCH) BATCH_FLUSH_MS=$(BATCH_FLUSH_MS) npm --prefix middleware run dev:anvil
 
 health-anvil:
 	@curl -sS http://localhost:3000/health
