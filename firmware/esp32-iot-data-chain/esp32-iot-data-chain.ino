@@ -17,7 +17,8 @@ const char* NTP_SERVER_2 = "time.nist.gov";
 const long GMT_OFFSET_SEC = 0;  // non ci interessa avere ora locale italiana
 const int DAYLIGHT_OFFSET_SEC = 0;
 
-const int LIGHT_SENSOR_PIN = 34;
+const int TEMPERATURE_SENSOR_PIN = 34;
+const int ADC_SAMPLES = 20;
 
 const size_t PACKED_BUFFER_SIZE = 168;
 
@@ -61,6 +62,8 @@ void setup() {
   Serial.println();
   Serial.println("Avvio ESP32 IoT Data Chain...");
 
+  analogReadResolution(12);
+  analogSetPinAttenuation(TEMPERATURE_SENSOR_PIN, ADC_0db);
   uECC_set_rng(fillRandomBytes);
 
   connectToWiFi();  // connetto al WiFi
@@ -68,8 +71,6 @@ void setup() {
   timeSynchronized = synchronizeTime();  // chiedo l'orario
 
   nonceSynchronized = synchronizeNonceFromServer();  // chiedo nonce
-
-  randomSeed(analogRead(34));  // rendo casuale la simulazione della misura
 }
 
 void loop() {
@@ -178,12 +179,30 @@ uint64_t getDeviceTimestamp() {
 // =======================
 
 int readMeasurement() {
-  int lightValue = analogRead(LIGHT_SENSOR_PIN);
+  uint32_t millivoltsSum = 0;
 
-  Serial.print("Luminosita letta: ");
-  Serial.println(lightValue);
+  for (int i = 0; i < ADC_SAMPLES; i++) {
+    millivoltsSum += analogReadMilliVolts(TEMPERATURE_SENSOR_PIN);
+    delay(10);
+  }
 
-  return lightValue;
+  float millivolts = millivoltsSum / (float)ADC_SAMPLES;
+  float temperatureCelsius = millivolts / 10.0f;
+
+  int temperatureValue = (int)(temperatureCelsius + 0.5f);
+
+  Serial.print("Tensione LM35: ");
+  Serial.print(millivolts);
+  Serial.println(" mV");
+
+  Serial.print("Temperatura letta: ");
+  Serial.print(temperatureCelsius);
+  Serial.println(" °C");
+
+  Serial.print("Valore inviato on-chain: ");
+  Serial.println(temperatureValue);
+
+  return temperatureValue;
 }
 
 bool synchronizeNonceFromServer() {
