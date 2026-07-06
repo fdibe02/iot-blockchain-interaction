@@ -64,7 +64,7 @@ Obiettivo finale del firmware:
 
 Stato attuale:
 
-* genera valori simulati;
+* legge valori di temperatura dal pin analogico configurato, pensato per un sensore LM35 nel prototipo attuale;
 * sincronizza l'orario tramite NTP quando disponibile;
 * sincronizza il nonce dal middleware;
 * costruisce il buffer binario coerente con `abi.encodePacked(...)`;
@@ -393,10 +393,10 @@ Durante lo sviluppo locale, il flusso tipico è:
 ```text
 1. Avviare Anvil
 2. Eseguire il deploy del contratto con `make deploy-anvil`
-3. Aprire la web app
-4. Collegare MetaMask alla rete locale Anvil
-5. Registrare un dispositivo dalla web app
-6. Configurare middleware/.env.anvil
+3. Configurare `middleware/.env.anvil` e, se si usa la board, `firmware/esp32-iot-data-chain/secrets.h`
+4. Aprire la web app
+5. Collegare MetaMask alla rete locale Anvil
+6. Registrare il dispositivo dalla web app o con `make register-device-anvil`
 7. Avviare il middleware Node.js
 8. Inviare una misurazione firmata tramite `make simulate-device-anvil` oppure tramite ESP32
 9. Leggere i dati aggiornati dalla web app

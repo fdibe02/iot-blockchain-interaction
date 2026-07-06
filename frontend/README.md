@@ -31,7 +31,7 @@ A partire da questo address, la web app può leggere:
 - JavaScript vanilla
 - ethers.js v6
 - MetaMask
-- Smart contract Solidity eseguito su rete locale Anvil
+- Smart contract Solidity eseguito sulla rete configurata in MetaMask, ad esempio Anvil o Sepolia
 
 ## Struttura generale
 
@@ -51,4 +51,5 @@ ethers.js
   ↓
 Smart Contract
   ↓
-Blockchain locale Anvil
+Blockchain configurata in MetaMask
+```
