@@ -1,0 +1,6 @@
+scenario,measurementIndex,nonce,value,deviceTimestamp,temperatureCelsius
+B5,1,24,29,1783267573,28.50
+B5,2,25,28,1783267583,28.42
+B5,3,26,28,1783267593,28.36
+B5,4,27,28,1783267603,28.35
+B5,5,28,28,1783267613,28.19
