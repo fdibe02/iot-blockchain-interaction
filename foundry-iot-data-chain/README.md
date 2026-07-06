@@ -4,6 +4,8 @@ Modulo Foundry del progetto di tesi.
 
 Questa cartella contiene la parte smart contract del progetto: contratti Solidity, test e script di deploy.
 
+Il contratto principale `IoTDataStorage` supporta sia la registrazione di una singola misura firmata, tramite `recordSignedMeasurement(...)`, sia la registrazione batch di più misure firmate nella stessa transazione, tramite `recordSignedMeasurements(...)`.
+
 ## Contenuto della cartella
 
 ```text
@@ -72,4 +74,4 @@ forge script script/DeployIoTDataStorage.s.sol:DeployIoTDataStorage \
 
 Questo modulo riguarda solo la parte smart contract.
 
-La descrizione generale della tesi, dell’architettura complessiva e dell’integrazione con ESP32, middleware e client web3 si trova nel README principale della repository.
+La descrizione generale della tesi, dell’architettura complessiva, dell’integrazione con ESP32 + LM35DZ, middleware e client web3, e dell'esperimento batch vs single su Sepolia si trova nel README principale della repository.

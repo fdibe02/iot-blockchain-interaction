@@ -2,7 +2,7 @@
 
 ## Obiettivo finale
 
-Realizzare un sistema IoT-blockchain in cui un ESP32 raccoglie o simula misurazioni ambientali, firma digitalmente i dati prodotti e li invia a un middleware Node.js.
+Realizzare un sistema IoT-blockchain in cui un ESP32 raccoglie misurazioni ambientali reali da un sensore LM35DZ, firma digitalmente i dati prodotti e li invia a un middleware Node.js.
 
 Il middleware riceve le misurazioni firmate, le valida preventivamente, le inoltra a uno smart contract e paga il gas della transazione tramite un wallet relayer.
 
@@ -15,7 +15,7 @@ Il caso d'uso di riferimento è il monitoraggio della catena del freddo: il disp
 Flusso finale previsto:
 
 ```text
-ESP32 -> Node.js middleware -> Smart Contract -> Web App
+ESP32 + LM35DZ -> Node.js middleware -> Smart Contract -> Web App
 ```
 
 Il progetto usa un'architettura con middleware/relayer:
@@ -24,7 +24,7 @@ Il progetto usa un'architettura con middleware/relayer:
 * il dispositivo firma i dati della misurazione con una chiave privata associata al proprio address Ethereum;
 * il middleware riceve la misurazione firmata tramite API HTTP;
 * il middleware effettua controlli preventivi off-chain;
-* il middleware invia la transazione allo smart contract usando il wallet relayer;
+* il middleware invia la transazione allo smart contract usando il wallet relayer, in modalità singola o batch;
 * lo smart contract verifica on-chain registrazione del dispositivo, nonce e firma;
 * la web app legge i dati salvati on-chain.
 
@@ -36,17 +36,22 @@ Il flusso firmato completo oggi è verificabile in due modi:
 
 ```text
 simulate-device.js -> Node.js middleware -> Smart Contract -> Web App
-ESP32 firmware -> Node.js middleware -> Smart Contract -> Web App
+ESP32 + LM35DZ firmware -> Node.js middleware -> Smart Contract -> Web App
 ```
 
-Lo script `middleware/scripts/simulate-device.js` resta utile per testare rapidamente il flusso senza usare la board fisica. Il firmware ESP32 attuale costruisce invece il buffer compatibile con `abi.encodePacked(...)`, calcola il `dataHash`, genera una firma ECDSA secp256k1 e invia il payload firmato al middleware.
+Lo script `middleware/scripts/simulate-device.js` resta utile per testare rapidamente il flusso senza usare la board fisica. Il firmware ESP32 attuale legge una temperatura reale dal sensore LM35DZ, costruisce il buffer compatibile con `abi.encodePacked(...)`, calcola il `dataHash`, genera una firma ECDSA secp256k1 e invia il payload firmato al middleware.
+
+Il flusso end-to-end reale `ESP32 + LM35DZ -> middleware -> smart contract -> Sepolia` è stato verificato. Il middleware supporta inoltre due modalità di invio:
+
+* `single`: ogni misura firmata genera una transazione separata;
+* `batch`: il middleware accumula più misure firmate dello stesso dispositivo e le invia con una singola transazione.
 
 | Componente         | Stato attuale                                                                                           | Obiettivo finale                                               |
 | ------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Smart contract     | Registra dispositivi, verifica firme e nonce, salva misurazioni firmate.                                | Restare il punto di verità on-chain del sistema.               |
-| Middleware         | Riceve payload firmati, verifica API key, formato, registrazione, nonce e firma prima di inviare la tx. | Fare da gateway/relayer per dispositivi reali.                 |
+| Smart contract     | Registra dispositivi, verifica firme e nonce, salva misurazioni firmate singole o batch.                | Restare il punto di verità on-chain del sistema.               |
+| Middleware         | Riceve payload firmati, verifica API key, formato, registrazione, nonce e firma, poi invia tx single o batch. | Fare da gateway/relayer per dispositivi reali.                 |
 | Simulatore Node.js | Simula un dispositivo firmante e permette di testare il flusso completo senza board fisica.             | Restare uno strumento di test e debug.                         |
-| Firmware ESP32     | Legge una misura, usa WiFi/HTTP/NTP, calcola hash, firma e invia il payload completo al middleware.     | Essere verificato end-to-end su board fisica e rete reale.     |
+| Firmware ESP32     | Legge il sensore LM35DZ, usa WiFi/HTTP/NTP, calcola hash, firma e invia il payload completo al middleware. | Restare il nodo IoT reale del prototipo.                       |
 | Frontend           | Permette connessione MetaMask, registrazione device e lettura dati on-chain.                            | Restare interfaccia di configurazione e consultazione.         |
 
 ## Componenti principali
@@ -57,14 +62,15 @@ Contiene il codice eseguito dal microcontrollore.
 
 Obiettivo finale del firmware:
 
-* raccogliere o simulare misurazioni ambientali, in particolare valori di temperatura nel caso d'uso della catena del freddo;
+* raccogliere misurazioni ambientali reali, in particolare valori di temperatura nel caso d'uso della catena del freddo;
 * costruire il messaggio da inviare;
 * firmare la misurazione con la chiave privata del dispositivo;
 * inviare i dati firmati al middleware tramite richiesta HTTP.
 
 Stato attuale:
 
-* genera valori simulati;
+* legge un sensore reale LM35DZ dal pin analogico configurato;
+* media 20 letture in millivolt, converte il valore in gradi Celsius e lo arrotonda a intero;
 * sincronizza l'orario tramite NTP quando disponibile;
 * sincronizza il nonce dal middleware;
 * costruisce il buffer binario coerente con `abi.encodePacked(...)`;
@@ -100,7 +106,7 @@ Il middleware espone API HTTP verso il dispositivo, valida le richieste prima di
 
 Questi controlli off-chain servono a evitare transazioni inutili e gas sprecato. La verifica definitiva resta nello smart contract.
 
-Il middleware supporta profili di configurazione separati per Anvil e Sepolia. Per endpoint, variabili d'ambiente e script disponibili vedere `middleware/README.md`.
+Il middleware supporta profili di configurazione separati per Anvil e Sepolia e può operare in modalità `single` o `batch`. Per endpoint, variabili d'ambiente e script disponibili vedere `middleware/README.md`.
 
 ### Smart contract
 
@@ -111,7 +117,7 @@ Lo smart contract `IoTDataStorage` gestisce:
 * associazione tra address Ethereum e dispositivo fisico/logico;
 * verifica della firma della misurazione;
 * protezione anti-replay tramite nonce crescente;
-* memorizzazione delle misurazioni;
+* memorizzazione delle misurazioni singole o batch;
 * lettura dei dati da parte della web app.
 
 La registrazione dei dispositivi è riservata all'owner del contratto.
@@ -123,6 +129,28 @@ La registrazione delle misurazioni può essere inviata dal middleware/relayer, m
 * la firma è stata prodotta dall'address del dispositivo registrato.
 
 L'hash firmato include `address(this)` e `block.chainid`, così la stessa firma non è riutilizzabile su un altro contratto o su un'altra blockchain.
+
+Per ridurre il costo medio per misura, il contratto espone anche `recordSignedMeasurements(...)`, che registra più misure firmate nella stessa transazione. Ogni misura del batch conserva la propria firma, il proprio timestamp e il proprio nonce.
+
+## Esperimento batch vs single su Sepolia
+
+È stato svolto un esperimento reale su Sepolia usando misurazioni prodotte dall'ESP32 con sensore LM35DZ.
+
+Sono stati confrontati due scenari:
+
+* `S1 single`: 5 misurazioni reali, inviate con 5 transazioni separate;
+* `B5 batch`: 5 misurazioni reali, inviate con 1 transazione batch.
+
+Risultati principali:
+
+| Metrica | Single medio | Batch | Variazione |
+| --- | ---: | ---: | ---: |
+| Gas per misura | 157340 | 130205.4 | -17.25% |
+| Fee ETH per misura | 0.000171805323808012 | 0.00014593181641043461 | -15.06% |
+| Calldata bytes per misura | 292 | 314.4 | +7.67% |
+| Latenza media device-to-block | 6.4 s | 39.0 s | +32.6 s |
+
+In questo esperimento il batch riduce gas e costo medio per misura, ma aumenta la latenza applicativa perché le prime misure restano nel buffer in attesa del completamento del batch. Inoltre, con questa codifica dei dati, il batch non riduce la calldata media per misura: la aumenta del 7.67%.
 
 ### Web app
 
@@ -172,7 +200,7 @@ Contiene il codice per ESP32 scritto in ambiente Arduino.
 
 Il firmware attuale:
 
-* genera misurazioni simulate;
+* legge misurazioni reali da LM35DZ;
 * gestisce WiFi e timestamp;
 * sincronizza il nonce con il middleware;
 * calcola hash e firma della misura;
@@ -226,6 +254,7 @@ Contiene script di supporto usati durante lo sviluppo locale.
 Attualmente include script per:
 
 * deploy su Anvil;
+* deploy su Sepolia;
 * aggiornamento automatico dell'indirizzo del contratto usato dal frontend;
 * supporto al flusso di sviluppo locale.
 
@@ -236,6 +265,7 @@ Raccoglie comandi utili per automatizzare operazioni frequenti durante lo svilup
 * deploy del contratto;
 * visualizzazione dell'indirizzo del contratto;
 * avvio del middleware;
+* avvio del middleware in modalità single o batch;
 * invio di misurazioni simulate tramite middleware;
 * compilazione, upload e monitor seriale del firmware;
 * controlli rapidi su script, smart contract e pipeline.
@@ -346,20 +376,24 @@ Comandi Make utili:
 
 ```bash
 make start-middleware-anvil
+make start-middleware-anvil-batch BATCH=5
 make health-anvil
 make register-device-anvil
 make verify-hash-anvil
 make test-negative-anvil
+make simulate-buffered-anvil BATCH=5
 ```
 
 Per Sepolia esistono i target equivalenti:
 
 ```bash
 make start-middleware-sepolia
+make start-middleware-sepolia-batch BATCH=5
 make health-sepolia
 make register-device-sepolia
 make verify-hash-sepolia
 make test-negative-sepolia
+make simulate-buffered-sepolia BATCH=5
 ```
 
 `register-device-*` registra un dispositivo usando `OWNER_PRIVATE_KEY`. Se `DEVICE_ADDRESS` non viene passato, lo script prova a derivare l'address da `DEVICE_PRIVATE_KEY` configurata nell'ambiente:
@@ -436,7 +470,7 @@ L'obiettivo non è realizzare un sistema IoT industriale completo per logistica 
 misurazione -> firma del dispositivo -> middleware -> smart contract -> lettura da web app
 ```
 
-Il flusso end-to-end firmato è dimostrabile tramite dispositivo simulato in Node.js e tramite firmware ESP32 firmante. Il passaggio ancora aperto è completare e documentare i test su board fisica, rete reale e sensore reale.
+Il flusso end-to-end firmato è dimostrabile tramite dispositivo simulato in Node.js e tramite firmware ESP32 firmante. È stato verificato anche con ESP32 fisico, rete reale, sensore LM35DZ e pubblicazione su Sepolia. L'esperimento batch vs single mostra il compromesso principale della soluzione: il batch riduce gas e fee medie per misura, ma introduce latenza applicativa aggiuntiva.
 
 Il sistema permette quindi di studiare:
 

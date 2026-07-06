@@ -3,11 +3,11 @@
 ## Obiettivo
 
 Questo firmware rappresenta la componente IoT del progetto.  
-L'ESP32 raccoglie periodicamente una misurazione, costruisce il messaggio da firmare, genera una firma ECDSA secp256k1 e invia il payload firmato a un server Node.js tramite richiesta HTTP POST.
+L'ESP32 raccoglie periodicamente una misurazione reale di temperatura da un sensore LM35DZ, costruisce il messaggio da firmare, genera una firma ECDSA secp256k1 e invia il payload firmato a un server Node.js tramite richiesta HTTP POST.
 
 ## Architettura
 
-ESP32 → server Node.js → smart contract → frontend web3
+ESP32 + LM35DZ → server Node.js → smart contract → frontend web3
 
 L'ESP32 non comunica direttamente con la blockchain.  
 La chiamata allo smart contract viene gestita dal server Node.js, che agisce da relayer e paga il gas della transazione.
@@ -27,6 +27,19 @@ firmware/esp32-iot-data-chain/esp32-iot-data-chain.ino
 - time.h
 - sha3
 - micro-ecc / uECC
+
+## Sensore LM35DZ
+
+Il firmware legge il sensore LM35DZ dal pin analogico configurato in `TEMPERATURE_SENSOR_PIN`.
+
+La lettura attuale:
+
+- usa risoluzione ADC a 12 bit;
+- imposta l'attenuazione del pin a `ADC_0db`;
+- esegue 20 letture con `analogReadMilliVolts(...)`;
+- calcola la media dei millivolt letti;
+- converte la tensione in gradi Celsius usando la relazione del sensore LM35DZ, cioè 10 mV per 1 °C;
+- arrotonda la temperatura a intero prima di inserirla nel payload firmato.
 
 ## Configurazione
 
@@ -87,32 +100,26 @@ make firmware-flash-monitor PORT=/dev/cu.usbserial-0001
 
 ## Stato attuale
 
-Il firmware compila correttamente per ESP32.
+Il firmware compila correttamente per ESP32 ed è stato verificato nel flusso reale con board fisica, rete WiFi, middleware, smart contract e rete Sepolia.
 
 Il firmware attuale:
 
 - si connette al WiFi;
 - sincronizza l'orario tramite NTP quando disponibile;
-- legge una misura dal pin analogico configurato;
+- legge la temperatura reale dal sensore LM35DZ;
+- calcola la media delle letture in millivolt, converte in °C e arrotonda a intero;
 - sincronizza il nonce dal middleware;
 - costruisce il buffer binario compatibile con `abi.encodePacked(...)`;
 - calcola il `dataHash` con Keccak-256;
 - firma l'hash con ECDSA secp256k1;
 - invia al middleware `deviceAddress`, `value`, `deviceTimestamp`, `nonce` e `signature`.
 
-Non sono ancora stati verificati:
+## Verifiche eseguite
 
-- upload sulla board fisica
-- connessione WiFi reale
-- comunicazione seriale
-- invio effettivo della richiesta HTTP al server Node.js
-- integrazione con sensore reale
-- registrazione end-to-end della misura firmata prodotta dalla board
-
-## Prossimi passi
-
-- Collegare l'ESP32 tramite USB
-- Caricare il firmware sulla board
-- Avviare il server Node.js in rete locale
-- Verificare l'arrivo delle misurazioni sul backend
-- Collegare eventualmente un sensore reale al posto della misura simulata
+- upload sulla board fisica;
+- connessione WiFi reale;
+- comunicazione seriale;
+- lettura del sensore LM35DZ;
+- invio effettivo della richiesta HTTP al server Node.js;
+- registrazione end-to-end della misura firmata prodotta dalla board;
+- pubblicazione delle misure su smart contract in rete Sepolia.

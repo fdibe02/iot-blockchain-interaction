@@ -1,6 +1,6 @@
 # Middleware Node.js
 
-Middleware Node.js che riceve misurazioni firmate da un dispositivo IoT, le valida preventivamente e le registra su smart contract tramite un wallet relayer.
+Middleware Node.js che riceve misurazioni firmate da un dispositivo IoT, le valida preventivamente e le registra su smart contract tramite un wallet relayer, in modalità singola o batch.
 
 Questo componente espone un'API HTTP verso il dispositivo e interagisce con lo smart contract tramite `ethers.js`.
 
@@ -15,9 +15,14 @@ In particolare:
 3. controlla che il dispositivo sia registrato nello smart contract;
 4. controlla che il nonce non sia già stato usato;
 5. verifica off-chain che la firma sia coerente con l'address del dispositivo;
-6. invia la transazione allo smart contract tramite un wallet relayer.
+6. invia la transazione allo smart contract tramite un wallet relayer, oppure accumula la misura in un buffer batch.
 
 La validazione effettuata dal middleware è preventiva: serve a evitare transazioni inutili e quindi gas sprecato. La validazione definitiva resta invece nello smart contract, che verifica on-chain firma, registrazione del dispositivo e nonce.
+
+La modalità di invio è configurata da `TX_MODE`:
+
+* `single`: ogni misura valida genera una transazione separata;
+* `batch`: ogni misura valida viene inserita in un buffer per dispositivo e il middleware invia una transazione unica quando il buffer raggiunge `BATCH_SIZE`.
 
 ## Controlli off-chain e on-chain
 
@@ -38,6 +43,7 @@ Quindi il middleware ha principalmente un ruolo di:
 * gateway HTTP;
 * filtro preventivo;
 * relayer delle transazioni;
+* buffer batch opzionale;
 * componente di integrazione tra dispositivo e blockchain.
 
 ## File principali
@@ -53,6 +59,7 @@ middleware/
 └── scripts/
     ├── register-device.js
     ├── simulate-device.js
+    ├── simulate-buffered-measurements.js
     ├── test-negative-measurements.js
     └── verify-hash-consistency.js
 ```
@@ -88,6 +95,10 @@ CONFIRMATIONS=1
 MIDDLEWARE_URL=http://localhost:3000/api/measurements
 DEVICE_PRIVATE_KEY=0xINSERISCI_PRIVATE_KEY_DEVICE
 MEASUREMENT_VALUE=25
+
+TX_MODE=single
+BATCH_SIZE=1
+BATCH_FLUSH_MS=0
 ```
 
 ## Variabili d'ambiente
@@ -104,6 +115,9 @@ MEASUREMENT_VALUE=25
 | `MIDDLEWARE_URL`      | URL dell'endpoint HTTP del middleware, usato dagli script di simulazione.   |
 | `DEVICE_PRIVATE_KEY`  | Private key del dispositivo simulato negli script Node.js.                  |
 | `MEASUREMENT_VALUE`   | Valore di default della misura simulata.                                    |
+| `TX_MODE`             | Modalità di invio delle transazioni: `single` oppure `batch`.               |
+| `BATCH_SIZE`          | Numero di misure da accumulare prima di inviare una transazione batch.      |
+| `BATCH_FLUSH_MS`      | Timeout opzionale per svuotare il buffer batch anche se non è pieno.        |
 
 I file `.env`, `.env.anvil` e `.env.sepolia` non devono essere committati, perché contengono chiavi private e valori sensibili. Devono invece essere committati solo i file `.env*.example`, che contengono placeholder.
 
@@ -192,6 +206,7 @@ Risposta in caso di successo:
 ```json
 {
   "status": "submitted",
+  "mode": "single",
   "transactionHash": "0x...",
   "deviceAddress": "0x...",
   "value": "25",
@@ -201,7 +216,34 @@ Risposta in caso di successo:
 }
 ```
 
-Il middleware risponde con HTTP `202 Accepted`: significa che la transazione è stata inviata alla rete, ma il server non aspetta il mining prima di rispondere al dispositivo. La conferma viene poi registrata nei log del middleware.
+In modalità `batch`, se il buffer non è ancora pieno, la risposta indica che la misura è stata accettata ma non ancora pubblicata on-chain:
+
+```json
+{
+  "status": "buffered",
+  "mode": "batch",
+  "deviceAddress": "0x...",
+  "nonce": "1",
+  "bufferSize": 1,
+  "batchSize": 5
+}
+```
+
+Quando l'inserimento della misura completa il batch, il middleware invia una transazione unica:
+
+```json
+{
+  "status": "submitted",
+  "mode": "batch",
+  "transactionHash": "0x...",
+  "deviceAddress": "0x...",
+  "batchSize": 5,
+  "firstNonce": "1",
+  "lastNonce": "5"
+}
+```
+
+Il middleware risponde con HTTP `202 Accepted`: significa che la misura è stata accettata dal middleware e, quando la risposta è `submitted`, che la transazione è stata inviata alla rete. Il server non aspetta il mining prima di rispondere al dispositivo. La conferma viene poi registrata nei log del middleware.
 
 ### Sincronizzazione nonce
 
@@ -225,6 +267,7 @@ Risposta attesa:
   "deviceAddress": "0x...",
   "lastNonce": "0",
   "nextNonce": "1",
+  "bufferedLastNonce": "0",
   "onChainLastNonce": "0",
   "pendingLastNonce": "0"
 }
@@ -287,6 +330,31 @@ Esecuzione su Sepolia:
 
 ```bash
 npm run simulate-device:sepolia
+```
+
+### Simulazione di più misure per batch
+
+Lo script `scripts/simulate-buffered-measurements.js` invia più misure firmate consecutive allo stesso endpoint HTTP. È utile per verificare il comportamento del middleware in modalità `batch`, perché ogni richiesta HTTP contiene comunque una singola misura, ma il middleware le accumula e invia una sola transazione quando raggiunge `BATCH_SIZE`.
+
+Esecuzione su Anvil:
+
+```bash
+npm run simulate-buffered:anvil -- 5
+```
+
+Esecuzione su Sepolia:
+
+```bash
+npm run simulate-buffered:sepolia -- 5
+```
+
+Dal `Makefile` della root sono disponibili anche:
+
+```bash
+make start-middleware-anvil-batch BATCH=5
+make simulate-buffered-anvil BATCH=5
+make start-middleware-sepolia-batch BATCH=5
+make simulate-buffered-sepolia BATCH=5
 ```
 
 ### Scenari negativi
@@ -371,4 +439,8 @@ In questo modo il middleware non è il produttore fiduciario della misura: può 
 
 Il middleware è configurabile tramite profili separati per Anvil e Sepolia. Una misura firmata da un dispositivo simulato può essere inviata al middleware, registrata sullo smart contract e letta dal frontend Web3.
 
-Il firmware ESP32 attuale costruisce il payload firmato e può inviarlo al middleware. Lo script `simulate-device.js` resta comunque utile per testare il flusso completo senza dipendere dalla board fisica, dal WiFi o dal sensore.
+Il firmware ESP32 attuale legge il sensore LM35DZ, costruisce il payload firmato e può inviarlo al middleware. Il flusso reale ESP32 + LM35DZ -> middleware -> smart contract -> Sepolia è stato verificato.
+
+Il middleware supporta sia transazioni singole sia transazioni batch. Nell'esperimento reale su Sepolia, lo scenario `S1 single` ha registrato 5 misure con 5 transazioni, mentre lo scenario `B5 batch` ha registrato 5 misure con 1 transazione. Il batch ha ridotto gas e fee medie per misura, ma ha aumentato la latenza applicativa e non ha ridotto la calldata media per misura.
+
+Lo script `simulate-device.js` resta comunque utile per testare il flusso completo senza dipendere dalla board fisica, dal WiFi o dal sensore.
