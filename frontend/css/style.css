@@ -41,6 +41,7 @@ button {
     padding: 10px 14px;
     cursor: pointer;
     margin-right: 8px;
+    margin-bottom: 8px;
 }
 
 .output {
@@ -53,4 +54,24 @@ button {
 
 .status {
     font-weight: bold;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 14px;
+}
+
+th,
+td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+    vertical-align: top;
+    word-break: break-word;
+}
+
+th {
+    background-color: #e8e8e8;
 }

@@ -8,7 +8,8 @@ Il frontend permette all’utente di:
 - registrare un dispositivo IoT sulla blockchain;
 - cercare un dispositivo tramite il suo address;
 - leggere i dati associati al dispositivo;
-- leggere l’ultima misurazione registrata.
+- leggere l’ultima misurazione registrata;
+- leggere le ultime N misurazioni già salvate on-chain.
 
 ## Obiettivo
 
@@ -22,7 +23,8 @@ A partire da questo address, la web app può leggere:
 - se il dispositivo è registrato;
 - il metadata URI associato;
 - il timestamp di registrazione;
-- l’ultima misurazione disponibile.
+- l’ultima misurazione disponibile;
+- una lista read-only delle ultime N misurazioni.
 
 ## Tecnologie utilizzate
 
@@ -31,7 +33,7 @@ A partire da questo address, la web app può leggere:
 - JavaScript vanilla
 - ethers.js v6
 - MetaMask
-- Smart contract Solidity eseguito su rete locale Anvil
+- Smart contract Solidity eseguito su Anvil o Sepolia
 
 ## Struttura generale
 

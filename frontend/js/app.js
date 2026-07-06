@@ -220,6 +220,157 @@ function showLatestMeasurementError(error) {
     document.getElementById("latestMeasurementDataHash").textContent = "-";
 }
 
+function getRecentMeasurements() {
+    if (contract === undefined) {
+        document.getElementById("recentMeasurementsStatus").textContent =
+            "Connetti prima MetaMask";
+        clearRecentMeasurementsTable();
+        return;
+    }
+
+    var deviceAddress = document.getElementById("deviceAddressInput").value;
+
+    if (deviceAddress === "") {
+        document.getElementById("recentMeasurementsStatus").textContent =
+            "Inserisci un address";
+        clearRecentMeasurementsTable();
+        return;
+    }
+
+    var measurementsLimit = Number(
+        document.getElementById("measurementsLimitInput").value,
+    );
+
+    if (
+        Number.isInteger(measurementsLimit) === false ||
+        measurementsLimit < 1 ||
+        measurementsLimit > 20
+    ) {
+        document.getElementById("recentMeasurementsStatus").textContent =
+            "Inserisci un numero tra 1 e 20";
+        clearRecentMeasurementsTable();
+        return;
+    }
+
+    document.getElementById("recentMeasurementsStatus").textContent =
+        "Lettura in corso...";
+    clearRecentMeasurementsTable();
+
+    contract
+        .getMeasurementCount(deviceAddress)
+        .then(function (measurementsCount) {
+            return getRecentMeasurementsByCount(
+                deviceAddress,
+                measurementsCount,
+                measurementsLimit,
+            );
+        })
+        .then(showRecentMeasurements)
+        .catch(showRecentMeasurementsError);
+}
+
+function getRecentMeasurementsByCount(
+    deviceAddress,
+    measurementsCount,
+    measurementsLimit,
+) {
+    if (measurementsCount === 0n) {
+        return [];
+    }
+
+    var firstIndex = measurementsCount - BigInt(measurementsLimit);
+
+    if (firstIndex < 0n) {
+        firstIndex = 0n;
+    }
+
+    var measurementReads = [];
+
+    for (var index = measurementsCount - 1n; index >= firstIndex; index--) {
+        measurementReads.push(
+            contract
+                .getMeasurement(deviceAddress, index)
+                .then(buildIndexedMeasurementFormatter(index)),
+        );
+    }
+
+    return Promise.all(measurementReads);
+}
+
+function buildIndexedMeasurementFormatter(index) {
+    return function (measurement) {
+        return {
+            index: index,
+            measurement: measurement,
+        };
+    };
+}
+
+function showRecentMeasurements(indexedMeasurements) {
+    if (indexedMeasurements.length === 0) {
+        document.getElementById("recentMeasurementsStatus").textContent =
+            "Nessuna misurazione trovata";
+        clearRecentMeasurementsTable();
+        return;
+    }
+
+    document.getElementById("recentMeasurementsStatus").textContent =
+        "Misurazioni lette: " + indexedMeasurements.length;
+
+    var tableBody = document.getElementById("recentMeasurementsBody");
+    tableBody.innerHTML = "";
+
+    indexedMeasurements.forEach(function (indexedMeasurement) {
+        tableBody.appendChild(
+            buildRecentMeasurementRow(
+                indexedMeasurement.index,
+                indexedMeasurement.measurement,
+            ),
+        );
+    });
+}
+
+function buildRecentMeasurementRow(index, measurement) {
+    var row = document.createElement("tr");
+
+    appendTableCell(row, index.toString());
+    appendTableCell(row, measurement[0].toString());
+    appendTableCell(row, formatTimestamp(measurement[1]));
+    appendTableCell(row, formatTimestamp(measurement[2]));
+    appendTableCell(row, measurement[3].toString());
+    appendTableCell(row, measurement[4]);
+
+    return row;
+}
+
+function appendTableCell(row, text) {
+    var cell = document.createElement("td");
+    cell.textContent = text;
+    row.appendChild(cell);
+}
+
+function formatTimestamp(timestamp) {
+    var timestampNumber = Number(timestamp);
+
+    if (timestampNumber === 0) {
+        return "-";
+    }
+
+    return new Date(timestampNumber * 1000).toLocaleString("it-IT");
+}
+
+function clearRecentMeasurementsTable() {
+    document.getElementById("recentMeasurementsBody").innerHTML = "";
+}
+
+function showRecentMeasurementsError(error) {
+    console.log(error);
+
+    document.getElementById("recentMeasurementsStatus").textContent =
+        "Errore durante la lettura delle misurazioni";
+    clearRecentMeasurementsTable();
+}
+
 
 document
     .getElementById("connectButton")
@@ -242,5 +393,6 @@ document
     .getElementById("getLatestMeasurementButton")
     .addEventListener("click", getLatestMeasurement);
 
-
-
+document
+    .getElementById("getRecentMeasurementsButton")
+    .addEventListener("click", getRecentMeasurements);
