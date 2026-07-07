@@ -8,6 +8,8 @@ FQBN ?= esp32:esp32:esp32
 PORT ?= /dev/cu.usbserial-0001
 FRONTEND_PORT ?= 8000
 
+STORAGE_MODE ?= legacy
+
 VALUE ?=
 DEVICE_ADDRESS ?=
 METADATA_URI ?= esp32-laboratorio
@@ -45,7 +47,7 @@ fmt-contract-check:
 	@cd $(FOUNDRY_DIR) && forge fmt --check
 
 deploy-anvil:
-	@set -a; source $(ANVIL_ENV); set +a; ./scripts/deploy-anvil.sh
+	@set -a; source $(ANVIL_ENV); set +a; STORAGE_MODE="$(STORAGE_MODE)" ./scripts/deploy-anvil.sh
 
 start-middleware-anvil:
 	@npm --prefix middleware run dev:anvil
@@ -66,7 +68,7 @@ test-negative-anvil:
 	@npm --prefix middleware run test-negative-measurements:anvil
 
 deploy-sepolia:
-	@set -a; source $(SEPOLIA_ENV); set +a; ./scripts/deploy-sepolia.sh
+	@set -a; source $(SEPOLIA_ENV); set +a; STORAGE_MODE="$(STORAGE_MODE)" ./scripts/deploy-sepolia.sh
 
 start-middleware-sepolia:
 	@npm --prefix middleware run dev:sepolia

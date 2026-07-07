@@ -15,25 +15,29 @@ STORAGE_MODE="${STORAGE_MODE:-legacy}"
 
 case "$STORAGE_MODE" in
   legacy)
-    SCRIPT_FILE="DeployIoTDataStorage.s.sol"
-    SCRIPT_CONTRACT="DeployIoTDataStorage"
-    CONTRACT_NAME="IoTDataStorage"
-    ;;
-  full)
-    SCRIPT_FILE="DeployIoTDataStorageFull.s.sol"
-    SCRIPT_CONTRACT="DeployIoTDataStorageFull"
-    CONTRACT_NAME="IoTDataStorageFull"
-    ;;
-  latest)
-    SCRIPT_FILE="DeployIoTDataStorageLatest.s.sol"
-    SCRIPT_CONTRACT="DeployIoTDataStorageLatest"
-    CONTRACT_NAME="IoTDataStorageLatest"
-    ;;
-  hash-uri)
-    SCRIPT_FILE="DeployIoTDataStorageHashURI.s.sol"
-    SCRIPT_CONTRACT="DeployIoTDataStorageHashURI"
-    CONTRACT_NAME="IoTDataStorageHashURI"
-    ;;
+  SCRIPT_FILE="DeployIoTDataStorage.s.sol"
+  SCRIPT_CONTRACT="DeployIoTDataStorage"
+  CONTRACT_NAME="IoTDataStorage"
+  ENV_STORAGE_MODE="legacy"
+  ;;
+full)
+  SCRIPT_FILE="DeployIoTDataStorageFull.s.sol"
+  SCRIPT_CONTRACT="DeployIoTDataStorageFull"
+  CONTRACT_NAME="IoTDataStorageFull"
+  ENV_STORAGE_MODE="full-storage"
+  ;;
+latest)
+  SCRIPT_FILE="DeployIoTDataStorageLatest.s.sol"
+  SCRIPT_CONTRACT="DeployIoTDataStorageLatest"
+  CONTRACT_NAME="IoTDataStorageLatest"
+  ENV_STORAGE_MODE="latest-storage"
+  ;;
+hash-uri)
+  SCRIPT_FILE="DeployIoTDataStorageHashURI.s.sol"
+  SCRIPT_CONTRACT="DeployIoTDataStorageHashURI"
+  CONTRACT_NAME="IoTDataStorageHashURI"
+  ENV_STORAGE_MODE="hash-uri-storage"
+  ;;
   *)
     echo "Errore: STORAGE_MODE non valido: $STORAGE_MODE"
     echo "Valori ammessi: legacy, full, latest, hash-uri"
@@ -68,6 +72,7 @@ fi
 # ==========================
 
 echo "Deploy del contratto su Sepolia..."
+echo "Env storage mode: $ENV_STORAGE_MODE"
 echo "Storage mode: $STORAGE_MODE"
 echo "Contract name: $CONTRACT_NAME"
 
@@ -142,6 +147,8 @@ const fs = require('node:fs');
 const envFile = process.argv[1];
 const contractAddress = process.argv[2];
 
+const storageMode = process.argv[3];
+
 const content = fs.readFileSync(envFile, 'utf8');
 
 if (!/^CONTRACT_ADDRESS=/m.test(content)) {
@@ -149,13 +156,22 @@ if (!/^CONTRACT_ADDRESS=/m.test(content)) {
   process.exit(1);
 }
 
-const updatedContent = content.replace(
+let updatedContent = content.replace(
   /^CONTRACT_ADDRESS=.*/m,
   'CONTRACT_ADDRESS=' + contractAddress
 );
 
+if (/^STORAGE_MODE=/m.test(updatedContent)) {
+  updatedContent = updatedContent.replace(
+    /^STORAGE_MODE=.*/m,
+    'STORAGE_MODE=' + storageMode
+  );
+} else {
+  updatedContent = updatedContent.trimEnd() + '\nSTORAGE_MODE=' + storageMode + '\n';
+}
+
 fs.writeFileSync(envFile, updatedContent);
-" "$SEPOLIA_ENV_FILE" "$CONTRACT_ADDRESS"
+" "$SEPOLIA_ENV_FILE" "$CONTRACT_ADDRESS" "$ENV_STORAGE_MODE"
 
 if [ -f "$FIRMWARE_UPDATE_SCRIPT" ]; then
   node "$FIRMWARE_UPDATE_SCRIPT" "$CONTRACT_ADDRESS" "$CHAIN_ID"

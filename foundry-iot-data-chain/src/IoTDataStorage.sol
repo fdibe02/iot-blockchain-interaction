@@ -157,6 +157,10 @@ contract IoTDataStorage {
         return i_owner;
     }
 
+    function getStorageMode() external pure returns (string memory) {
+        return "legacy";
+    }
+
     function getMeasurementHash(address deviceAddress, int256 value, uint256 deviceTimestamp, uint256 nonce)
         public
         view

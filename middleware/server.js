@@ -7,6 +7,7 @@ import { ethers } from "ethers";
 const PORT = Number(process.env.PORT ?? 3000);
 const RPC_URL = process.env.RPC_URL;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
+const EXPECTED_STORAGE_MODE = process.env.STORAGE_MODE;
 const RELAYER_PRIVATE_KEY = process.env.RELAYER_PRIVATE_KEY;
 const DEVICE_API_KEY = process.env.DEVICE_API_KEY;
 const CONFIRMATIONS = Number(process.env.CONFIRMATIONS ?? 1);
@@ -21,6 +22,7 @@ const UINT256_MASK =
     0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn;
 
 const IOT_DATA_STORAGE_ABI = [
+    "function getStorageMode() view returns (string)",
     "function getDevice(address deviceAddress) view returns (tuple(bool isRegistered, string metadataURI, uint256 registeredAt))",
     "function getLastNonce(address deviceAddress) view returns (uint256)",
     "function getMeasurementHash(address deviceAddress, int256 value, uint256 deviceTimestamp, uint256 nonce) view returns (bytes32)",
@@ -55,6 +57,8 @@ const relayerWallet = new ethers.Wallet(RELAYER_PRIVATE_KEY, provider);
 
 const iotDataStorage = new ethers.Contract(contractAddress, IOT_DATA_STORAGE_ABI, relayerWallet);
 
+let verifiedStorageMode;
+
 // 2. Routes
 
 app.get("/health", handleHealthCheck);
@@ -70,12 +74,30 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // 4. Avvio server
-app.listen(PORT, onServerStart);
+startServer().catch(handleServerStartError);
+
+async function startServer() {
+    verifiedStorageMode = await iotDataStorage.getStorageMode();
+
+    if (verifiedStorageMode !== EXPECTED_STORAGE_MODE) {
+        throw new Error(
+            `STORAGE_MODE mismatch: env=${EXPECTED_STORAGE_MODE}, contract=${verifiedStorageMode}`
+        );
+    }
+
+    app.listen(PORT, onServerStart);
+}
+
+function handleServerStartError(error) {
+    console.error("Errore avvio middleware:", error);
+    process.exit(1);
+}
 
 function onServerStart() {
     console.log(`Middleware avviato su http://localhost:${PORT}`);
     console.log(`Contratto: ${contractAddress}`);
     console.log(`Relayer: ${relayerWallet.address}`);
+    console.log(`Storage mode verificato: ${verifiedStorageMode}`);
 }
 
 // 5. Funzioni usate dalle routes e dai middleware
@@ -517,6 +539,10 @@ function validateEnvironment() {
         missingVariables.push("CONTRACT_ADDRESS");
     }
 
+    if (!EXPECTED_STORAGE_MODE) {
+        missingVariables.push("STORAGE_MODE");
+    }
+
     if (!RELAYER_PRIVATE_KEY) {
         missingVariables.push("RELAYER_PRIVATE_KEY");
     }
@@ -540,6 +566,17 @@ function validateEnvironment() {
 
     if (!Number.isInteger(CONFIRMATIONS) || CONFIRMATIONS < 0) {
         throw new Error("CONFIRMATIONS deve essere un intero maggiore o uguale a zero");
+    }
+
+    const allowedStorageModes = new Set([
+        "legacy",
+        "full-storage",
+        "latest-storage",
+        "hash-uri-storage",
+    ]);
+
+    if (!allowedStorageModes.has(EXPECTED_STORAGE_MODE)) {
+        throw new Error("STORAGE_MODE non valido");
     }
 }
 
