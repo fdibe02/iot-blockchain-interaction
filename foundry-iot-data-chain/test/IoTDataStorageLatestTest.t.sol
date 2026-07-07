@@ -213,4 +213,26 @@ contract IoTDataStorageLatestTest is Test {
 
         iotDataStorage.recordSignedMeasurement(device, MEASUREMENT_VALUE, deviceTimestamp, nonce, signature);
     }
+
+    // verifica logica che la modalità latest-storage conserva solo lo stato corrente
+    function testSecondMeasurementOverwritesLatestMeasurement() public {
+        vm.prank(owner);
+        iotDataStorage.registerDevice(device, METADATA_URI);
+
+        uint256 firstTimestamp = 1_700_000_000;
+        uint256 secondTimestamp = 1_700_000_100;
+
+        bytes memory firstSignature = _signMeasurement(DEVICE_PRIVATE_KEY, device, 10, firstTimestamp, 1);
+        bytes memory secondSignature = _signMeasurement(DEVICE_PRIVATE_KEY, device, 20, secondTimestamp, 2);
+
+        iotDataStorage.recordSignedMeasurement(device, 10, firstTimestamp, 1, firstSignature);
+        iotDataStorage.recordSignedMeasurement(device, 20, secondTimestamp, 2, secondSignature);
+
+        IoTDataStorageLatest.Measurement memory latestMeasurement = iotDataStorage.getLatestMeasurement(device);
+
+        assertEq(iotDataStorage.getMeasurementCount(device), 1);
+        assertEq(latestMeasurement.value, 20);
+        assertEq(latestMeasurement.deviceTimestamp, secondTimestamp);
+        assertEq(latestMeasurement.nonce, 2);
+    }
 }
