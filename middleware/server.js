@@ -27,6 +27,7 @@ const IOT_DATA_STORAGE_ABI = [
     "function getLastNonce(address deviceAddress) view returns (uint256)",
     "function getMeasurementHash(address deviceAddress, int256 value, uint256 deviceTimestamp, uint256 nonce) view returns (bytes32)",
     "function recordSignedMeasurement(address deviceAddress, int256 value, uint256 deviceTimestamp, uint256 nonce, bytes signature)",
+    "function recordSignedMeasurement(address deviceAddress, int256 value, uint256 deviceTimestamp, uint256 nonce, string measurementURI, bytes signature)",
 ];
 
 const INT256_MIN = -(1n << 255n);
@@ -112,6 +113,7 @@ async function handleHealthCheck(req, res, next) {
             status: "ok",
             blockNumber: blockNumber,
             contractAddress: CONTRACT_ADDRESS,
+            storageMode: verifiedStorageMode,
             relayerAddress: relayerAddress,
         });
     } catch (error) {
@@ -180,14 +182,15 @@ async function recordMeasurement(req, res, next) {
             measurement.deviceAddress
         );
 
-        // Invio la transazione alla rete, ma non blocco la risposta HTTP
-        // aspettando mining/conferme blockchain.
-        const transactionResponse = await iotDataStorage.recordSignedMeasurement(
-            measurement.deviceAddress,
-            measurement.value,
-            measurement.deviceTimestamp,
-            measurement.nonce,
-            signatureForContract
+        const measurementURI =
+            verifiedStorageMode === "hash-uri-storage"
+                ? buildMeasurementURI(measurement)
+                : undefined;
+
+        const transactionResponse = await submitMeasurementTransaction(
+            measurement,
+            signatureForContract,
+            measurementURI,
         );
 
         rememberPendingNonce(measurement.deviceAddress, measurement.nonce);
@@ -196,9 +199,10 @@ async function recordMeasurement(req, res, next) {
             transactionResponse,
             measurement,
             dataHash,
+            measurementURI,
         );
 
-        res.status(202).json({
+        const responseBody = {
             status: "submitted",
             transactionHash: transactionResponse.hash,
             deviceAddress: measurement.deviceAddress,
@@ -206,21 +210,61 @@ async function recordMeasurement(req, res, next) {
             deviceTimestamp: measurement.deviceTimestamp.toString(),
             nonce: measurement.nonce.toString(),
             dataHash,
-        });
+            storageMode: verifiedStorageMode,
+        };
+
+        if (measurementURI) {
+            responseBody.measurementURI = measurementURI;
+        }
+
+        res.status(202).json(responseBody);
     } catch (error) {
         next(error);
     }
+}
+
+async function submitMeasurementTransaction(
+    measurement,
+    signatureForContract,
+    measurementURI,
+) {
+    if (verifiedStorageMode === "hash-uri-storage") {
+        return iotDataStorage[
+            "recordSignedMeasurement(address,int256,uint256,uint256,string,bytes)"
+        ](
+            measurement.deviceAddress,
+            measurement.value,
+            measurement.deviceTimestamp,
+            measurement.nonce,
+            measurementURI,
+            signatureForContract,
+        );
+    }
+
+    return iotDataStorage[
+        "recordSignedMeasurement(address,int256,uint256,uint256,bytes)"
+    ](
+        measurement.deviceAddress,
+        measurement.value,
+        measurement.deviceTimestamp,
+        measurement.nonce,
+        signatureForContract,
+    );
 }
 
 function logTransactionConfirmationInBackground(
     transactionResponse,
     measurement,
     dataHash,
+    measurementURI,
 ) {
     if (CONFIRMATIONS === 0) {
         console.log(
             `Transazione inviata: ${transactionResponse.hash} ` +
-            `(nonce misura ${measurement.nonce.toString()})`,
+            `storageMode=${verifiedStorageMode} ` +
+            `nonce=${measurement.nonce.toString()} ` +
+            `dataHash=${dataHash} ` +
+            `${measurementURI ? `measurementURI=${measurementURI}` : ""}`,
         );
         return;
     }
@@ -235,10 +279,12 @@ function logTransactionConfirmationInBackground(
 
             console.log(
                 `Transazione confermata: ${transactionResponse.hash} ` +
+                `storageMode=${verifiedStorageMode} ` +
                 `block=${receipt?.blockNumber ?? "n/d"} ` +
                 `device=${measurement.deviceAddress} ` +
                 `nonce=${measurement.nonce.toString()} ` +
-                `dataHash=${dataHash}`,
+                `dataHash=${dataHash} ` +
+                `${measurementURI ? `measurementURI=${measurementURI}` : ""}`,
             );
         })
         .catch((error) => {
@@ -335,6 +381,10 @@ async function getMeasurementHashLocal(measurement) {
             measurement.nonce,
         ]
     );
+}
+
+function buildMeasurementURI(measurement) {
+    return `offchain://measurement/${measurement.deviceAddress}/${measurement.nonce.toString()}`;
 }
 
 function isIntegerLike(value) {
