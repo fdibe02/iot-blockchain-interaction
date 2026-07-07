@@ -25,3 +25,4 @@ build/
 # Local deployed contract address
 frontend/js/contract-address.js
 .local
+scripts/build-storage-modes-csv.zsh
