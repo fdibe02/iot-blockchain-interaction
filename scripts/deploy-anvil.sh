@@ -11,9 +11,35 @@ CHAIN_ID="31337"
 
 FOUNDRY_DIR="foundry-iot-data-chain"
 
-SCRIPT_FILE="DeployIoTDataStorage.s.sol"
-SCRIPT_CONTRACT="DeployIoTDataStorage"
-CONTRACT_NAME="IoTDataStorage"
+STORAGE_MODE="${STORAGE_MODE:-legacy}"
+
+case "$STORAGE_MODE" in
+  legacy)
+    SCRIPT_FILE="DeployIoTDataStorage.s.sol"
+    SCRIPT_CONTRACT="DeployIoTDataStorage"
+    CONTRACT_NAME="IoTDataStorage"
+    ;;
+  full)
+    SCRIPT_FILE="DeployIoTDataStorageFull.s.sol"
+    SCRIPT_CONTRACT="DeployIoTDataStorageFull"
+    CONTRACT_NAME="IoTDataStorageFull"
+    ;;
+  latest)
+    SCRIPT_FILE="DeployIoTDataStorageLatest.s.sol"
+    SCRIPT_CONTRACT="DeployIoTDataStorageLatest"
+    CONTRACT_NAME="IoTDataStorageLatest"
+    ;;
+  hash-uri)
+    SCRIPT_FILE="DeployIoTDataStorageHashURI.s.sol"
+    SCRIPT_CONTRACT="DeployIoTDataStorageHashURI"
+    CONTRACT_NAME="IoTDataStorageHashURI"
+    ;;
+  *)
+    echo "Errore: STORAGE_MODE non valido: $STORAGE_MODE"
+    echo "Valori ammessi: legacy, full, latest, hash-uri"
+    exit 1
+    ;;
+esac
 
 FRONTEND_ADDRESS_FILE="frontend/js/contract-address.js"
 ANVIL_ENV_FILE="middleware/.env.anvil"
@@ -42,6 +68,8 @@ fi
 # ==========================
 
 echo "Deploy del contratto su Anvil..."
+echo "Storage mode: $STORAGE_MODE"
+echo "Contract name: $CONTRACT_NAME"
 
 cd "$FOUNDRY_DIR"
 
