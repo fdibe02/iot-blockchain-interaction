@@ -24,3 +24,8 @@ build/
 
 # Local deployed contract address
 frontend/js/contract-address.js
+
+# local stuff
+.local/
+*.backup.csv
+experiments/storage-modes/*.txt
