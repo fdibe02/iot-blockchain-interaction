@@ -3,7 +3,7 @@
 set -euo pipefail
 
 RAW_ROOT="${RAW_ROOT:-experiments/raw/storage-modes}"
-CSV_FILE="${CSV_FILE:-experiments/performance-storage-modes.csv}"
+CSV_FILE="${CSV_FILE:-experiments/data/performance-storage-modes.csv}"
 EXPERIMENT="${EXPERIMENT:-storage-modes}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 SEND_INTERVAL_SECONDS="${SEND_INTERVAL_SECONDS:-}"
@@ -22,6 +22,8 @@ const header = [
     "batchSize",
     "sendIntervalSeconds",
     "measurementIndex",
+    "txType",
+    "isInitializationTx",
     "txHash",
     "blockNumber",
     "status",
@@ -36,6 +38,7 @@ const header = [
     "middlewareTotalLatencyMs",
     "deviceToBlockLatencySeconds",
     "logsCount",
+    "notes",
 ];
 
 function main() {
@@ -103,6 +106,7 @@ function buildRow({ network, storageMode, measurementIndex, receipt, tx }) {
     );
     const feeWei = gasUsed * effectiveGasPriceWei;
     const input = tx.input ?? "";
+    const isFirstMeasurement = String(measurementIndex) === "1";
 
     return {
         experiment,
@@ -111,6 +115,8 @@ function buildRow({ network, storageMode, measurementIndex, receipt, tx }) {
         batchSize,
         sendIntervalSeconds,
         measurementIndex,
+        txType: isFirstMeasurement ? "storageInitialization" : "recordSingle",
+        isInitializationTx: isFirstMeasurement ? "true" : "false",
         txHash: receipt.transactionHash ?? tx.hash ?? "",
         blockNumber: hexToDecimalString(receipt.blockNumber ?? tx.blockNumber),
         status: hexToDecimalString(receipt.status),
@@ -125,6 +131,9 @@ function buildRow({ network, storageMode, measurementIndex, receipt, tx }) {
         middlewareTotalLatencyMs: "",
         deviceToBlockLatencySeconds: "",
         logsCount: Array.isArray(receipt.logs) ? String(receipt.logs.length) : "",
+        notes: isFirstMeasurement
+            ? "prima misura dello scenario: include costo iniziale di scrittura su storage vuoto"
+            : "",
     };
 }
 

@@ -30,6 +30,14 @@ Il progetto usa un'architettura con middleware/relayer:
 
 In questo modello il middleware non è considerato la fonte fidata del dato: il suo ruolo principale è inoltrare la misurazione alla blockchain e pagare il gas. La validità del dato dipende dalla firma del dispositivo e dalla verifica effettuata dallo smart contract.
 
+## Branch sperimentali
+
+La repository usa branch sperimentali per confrontare varianti dell'architettura blockchain/middleware. Tra branch possono cambiare smart contract, ABI e logica middleware, ad esempio per valutare diverse strategie di storage o diverse modalità di invio delle misurazioni.
+
+Il firmware ESP32 resta invece stabile nel formato del payload firmato: continua a produrre e inviare `deviceAddress`, `value`, `deviceTimestamp`, `nonce` e `signature`. Tra branch possono cambiare solo parametri operativi necessari all'esperimento, come indirizzo del contratto, chain id o endpoint del middleware.
+
+La cartella `experiments/` contiene dati, script di ricostruzione/analisi, grafici e riepiloghi mantenuti come livello comune di confronto tra i branch sperimentali.
+
 ## Stato attuale dell'integrazione
 
 Il flusso firmato completo oggi è verificabile in due modi:
@@ -157,6 +165,7 @@ La repository è organizzata in più sottocartelle, ciascuna dedicata a una part
 
 ```text
 iot-blockchain-interaction/
+├── experiments/
 ├── firmware/
 ├── frontend/
 ├── foundry-iot-data-chain/
@@ -165,6 +174,10 @@ iot-blockchain-interaction/
 ├── Makefile
 └── README.md
 ```
+
+### `experiments/`
+
+Contiene i dataset sperimentali normalizzati, i dati raw usati per ricostruire alcune metriche, gli script di analisi, i grafici PNG e i riepiloghi dei risultati. Questa cartella rappresenta il livello comune di confronto tra i branch sperimentali; le differenze implementative tra branch restano principalmente in smart contract e middleware.
 
 ### `firmware/`
 
@@ -403,6 +416,33 @@ Durante lo sviluppo locale, il flusso tipico è:
 ```
 
 Nota: dopo ogni riavvio di Anvil, lo stato della blockchain locale viene perso. Di conseguenza è necessario eseguire nuovamente il deploy del contratto e registrare nuovamente il dispositivo prima di inviare nuove misurazioni.
+
+## Risultati sperimentali
+
+La parte sperimentale e' raccolta in `experiments/`.
+
+La cartella contiene:
+
+* CSV normalizzati con schema comune;
+* dati raw usati per ricostruire receipt, transazioni e timestamp dei blocchi;
+* script per generare grafici e riepiloghi;
+* grafici PNG usati per commentare i risultati nella tesi.
+
+I dettagli dello schema dati, dei criteri di esclusione delle transazioni di inizializzazione e dei limiti sperimentali sono documentati in `experiments/README.md` e `experiments/schema.md`.
+
+I grafici possono essere rigenerati con:
+
+```bash
+python3 experiments/scripts/plot-experiments.py
+```
+
+Il riepilogo numerico viene salvato in:
+
+```text
+experiments/results/summary.md
+```
+
+Nei grafici principali sono escluse le righe con `isInitializationTx=true`, che rappresentano il costo iniziale della prima scrittura su storage vuoto e non il costo ordinario a regime.
 
 ## Sicurezza e modello di fiducia
 
