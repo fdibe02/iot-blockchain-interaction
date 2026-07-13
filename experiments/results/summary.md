@@ -8,8 +8,8 @@ I valori seguenti sono calcolati escludendo le righe con `isInitializationTx=tru
 | baseline-by-network | sepolia | feeEth | 9 | 0.000977 | 0.000536 | 0.00159 |
 | baseline-by-network | anvil | gasUsed | 9 | 157265.33 | 157256.00 | 157268.00 |
 | baseline-by-network | sepolia | gasUsed | 9 | 157268.00 | 157268.00 | 157268.00 |
-| batch-vs-single | 1 | deviceToBlockLatencySeconds | 5 | 6.4 | 2 | 15 |
-| batch-vs-single | 5 | deviceToBlockLatencySeconds | 2 | 14 | 9 | 19 |
+| batch-vs-single | 1 | deviceToBlockLatencySeconds | 7 | 6.857143 | 2 | 15 |
+| batch-vs-single | 5 | deviceToBlockLatencySeconds | 3 | 32.2 | 27 | 39 |
 | batch-vs-single | 1 | feeEthPerMeasurement | 7 | 0.00017 | 0.000161 | 0.000178 |
 | batch-vs-single | 5 | feeEthPerMeasurement | 3 | 0.000141 | 0.000133 | 0.000146 |
 | batch-vs-single | 1 | gasPerMeasurement | 7 | 157334.86 | 157316.00 | 157340.00 |

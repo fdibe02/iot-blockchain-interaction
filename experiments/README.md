@@ -157,7 +157,7 @@ python3 experiments/scripts/build-batch-vs-single-csv.py
 
 Questo script legge gli hash dai log, recupera receipt, transazioni e timestamp dei blocchi tramite l'RPC Sepolia configurato in `middleware/.env.sepolia`, salva i JSON raw in `experiments/raw/batch-vs-single/sepolia/` e aggiorna `experiments/data/performance-batch-vs-single.csv`.
 
-Nel dataset batch-vs-single la latenza disponibile e' `deviceToBlockLatencySeconds`. Per le transazioni batch viene usato il timestamp dell'ultima misura inclusa nel batch, quando disponibile nei log ESP32.
+Nel dataset batch-vs-single la latenza disponibile e' `deviceToBlockLatencySeconds`. Per le transazioni batch il valore rappresenta la latenza media di tutte le misure incluse nella transazione, calcolata dai `deviceTimestamp` e dai `blockchainTimestamp` degli eventi `MeasurementRecorded` presenti nella receipt.
 
 ### 5. Generazione grafici e summary
 
