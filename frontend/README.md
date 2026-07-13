@@ -9,6 +9,7 @@ Il frontend permette all’utente di:
 - cercare un dispositivo tramite il suo address;
 - leggere i dati associati al dispositivo;
 - leggere l’ultima misurazione registrata.
+- leggere le ultime 20 misurazioni in una tabella scorrevole quando il contratto usa la modalità `full-storage`.
 
 ## Obiettivo
 
@@ -23,6 +24,7 @@ A partire da questo address, la web app può leggere:
 - il metadata URI associato;
 - il timestamp di registrazione;
 - l’ultima misurazione disponibile.
+- le ultime 20 misurazioni disponibili, dalla più recente, in modalità `full-storage`.
 
 ## Tecnologie utilizzate
 

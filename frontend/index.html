@@ -86,6 +86,33 @@
             <button id="getDeviceButton">Leggi dispositivo</button>
             <button id="getLatestMeasurementButton">Leggi ultima misurazione</button>
 
+            <div id="fullStorageMeasurements" hidden>
+                <button id="getRecentMeasurementsButton">Leggi ultime misurazioni</button>
+
+                <div class="output">
+                    <h3>Ultime misurazioni</h3>
+
+                    <p id="recentMeasurementsStatus">
+                        Premi il pulsante per leggere le ultime misurazioni disponibili.
+                    </p>
+
+                    <div id="measurementsTableContainer" class="measurements-table-container" hidden>
+                        <table class="measurements-table">
+                            <thead>
+                                <tr>
+                                    <th>Valore</th>
+                                    <th>Timestamp dispositivo</th>
+                                    <th>Timestamp blockchain</th>
+                                    <th>Nonce</th>
+                                    <th>Data hash</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recentMeasurementsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <div class="output">
                 <h3>Dati dispositivo</h3>
 

@@ -1,6 +1,7 @@
 var provider;
 var signer;
 var contract;
+var recentMeasurementsLimit = 20n;
 
 function connectWallet() {
     if (typeof window.ethereum === "undefined") {
@@ -33,6 +34,22 @@ function showConnectedAccount(account) {
 
     document.getElementById("connectionStatus").textContent = "Connesso";
     document.getElementById("connectedAccount").textContent = account;
+
+    contract
+        .getStorageMode()
+        .then(configureStorageMode)
+        .catch(showStorageModeError);
+}
+
+function configureStorageMode(storageMode) {
+    document.getElementById("fullStorageMeasurements").hidden =
+        storageMode !== "full-storage";
+}
+
+function showStorageModeError(error) {
+    console.log(error);
+
+    document.getElementById("fullStorageMeasurements").hidden = true;
 }
 
 function showConnectionError(error) {
@@ -220,6 +237,122 @@ function showLatestMeasurementError(error) {
     document.getElementById("latestMeasurementDataHash").textContent = "-";
 }
 
+function getRecentMeasurements() {
+    var status = document.getElementById("recentMeasurementsStatus");
+    var tableContainer = document.getElementById("measurementsTableContainer");
+    var tableBody = document.getElementById("recentMeasurementsBody");
+
+    if (contract === undefined) {
+        status.textContent = "Connetti prima MetaMask";
+        return;
+    }
+
+    var deviceAddress = document.getElementById("deviceAddressInput").value;
+
+    if (deviceAddress === "") {
+        status.textContent = "Inserisci un address";
+        return;
+    }
+
+    status.textContent = "Lettura delle misurazioni in corso...";
+    tableContainer.hidden = true;
+    tableBody.replaceChildren();
+
+    contract
+        .getMeasurementCount(deviceAddress)
+        .then(function (measurementCount) {
+            var firstIndex =
+                measurementCount > recentMeasurementsLimit
+                    ? measurementCount - recentMeasurementsLimit
+                    : 0n;
+            var measurementRequests = [];
+
+            for (var index = measurementCount; index > firstIndex; index--) {
+                measurementRequests.push(
+                    contract.getMeasurement(deviceAddress, index - 1n)
+                );
+            }
+
+            return Promise.all(measurementRequests).then(function (measurements) {
+                return {
+                    measurements: measurements,
+                    totalCount: measurementCount
+                };
+            });
+        })
+        .then(showRecentMeasurements)
+        .catch(showRecentMeasurementsError);
+}
+
+function showRecentMeasurements(result) {
+    var status = document.getElementById("recentMeasurementsStatus");
+    var tableContainer = document.getElementById("measurementsTableContainer");
+    var tableBody = document.getElementById("recentMeasurementsBody");
+    var measurements = result.measurements;
+
+    if (measurements.length === 0) {
+        status.textContent = "Nessuna misurazione disponibile";
+        tableContainer.hidden = true;
+        return;
+    }
+
+    measurements.forEach(function (measurement) {
+        var row = document.createElement("tr");
+        var dataHash = measurement[4];
+
+        appendMeasurementCell(row, measurement[0].toString());
+        appendMeasurementCell(row, formatTimestamp(measurement[1]));
+        appendMeasurementCell(row, formatTimestamp(measurement[2]));
+        appendMeasurementCell(row, measurement[3].toString());
+        appendMeasurementCell(row, abbreviateHash(dataHash), dataHash);
+
+        tableBody.appendChild(row);
+    });
+
+    status.textContent =
+        "Mostrate " +
+        measurements.length +
+        " misurazioni su " +
+        result.totalCount.toString() +
+        ", dalla più recente.";
+    tableContainer.hidden = false;
+}
+
+function appendMeasurementCell(row, text, title) {
+    var cell = document.createElement("td");
+
+    cell.textContent = text;
+
+    if (title !== undefined) {
+        cell.title = title;
+    }
+
+    row.appendChild(cell);
+}
+
+function formatTimestamp(timestamp) {
+    var timestampNumber = Number(timestamp);
+
+    if (timestampNumber === 0) {
+        return "-";
+    }
+
+    return new Date(timestampNumber * 1000).toLocaleString("it-IT");
+}
+
+function abbreviateHash(dataHash) {
+    return dataHash.slice(0, 10) + "..." + dataHash.slice(-6);
+}
+
+function showRecentMeasurementsError(error) {
+    console.log(error);
+
+    document.getElementById("recentMeasurementsStatus").textContent =
+        "Errore durante la lettura delle misurazioni";
+    document.getElementById("measurementsTableContainer").hidden = true;
+    document.getElementById("recentMeasurementsBody").replaceChildren();
+}
+
 
 document
     .getElementById("connectButton")
@@ -242,5 +375,8 @@ document
     .getElementById("getLatestMeasurementButton")
     .addEventListener("click", getLatestMeasurement);
 
+document
+    .getElementById("getRecentMeasurementsButton")
+    .addEventListener("click", getRecentMeasurements);
 
 

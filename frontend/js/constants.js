@@ -159,6 +159,13 @@ var abi = [
     },
     {
         "type": "function",
+        "name": "getStorageMode",
+        "inputs": [],
+        "outputs": [{ "name": "", "type": "string", "internalType": "string" }],
+        "stateMutability": "pure"
+    },
+    {
+        "type": "function",
         "name": "recordSignedMeasurement",
         "inputs": [
             {
