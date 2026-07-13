@@ -22,6 +22,9 @@ BATCH_ESP32_LOG = BATCH_LOG_DIR / "b5-batch-esp32.log"
 BATCH_MIDDLEWARE_LOG = BATCH_LOG_DIR / "b5-batch-middleware.log"
 
 SEND_INTERVAL_SECONDS = "10"
+MEASUREMENT_RECORDED_TOPIC = (
+    "0x1b84affd327a8570c66a7eb2f54ce5068f35e1bff9c47e26ae2e67650a933844"
+)
 
 HEADER = [
     "experiment",
@@ -134,13 +137,26 @@ def build_row(
     fee_wei = gas_used * effective_gas_price
     calldata_bytes = get_calldata_bytes(tx.get("input"))
     logs_count = len(receipt.get("logs") or [])
+    measurement_latencies = extract_measurement_latencies(receipt)
     device_to_block_latency = ""
     notes = ""
 
-    if device_timestamp is not None and block_timestamp is not None:
+    if measurement_latencies:
+        device_to_block_latency = format_decimal(
+            sum(measurement_latencies) / len(measurement_latencies)
+        )
+        if len(measurement_latencies) > 1:
+            notes = (
+                "latenza device-to-block media delle misure incluse nel batch, "
+                "ricavata dagli eventi on-chain"
+            )
+    elif device_timestamp is not None and block_timestamp is not None:
         device_to_block_latency = str(block_timestamp - device_timestamp)
     else:
-        notes = "deviceTimestamp non disponibile nei log ESP32 per calcolare deviceToBlockLatencySeconds"
+        notes = (
+            "timestamp non disponibile negli eventi on-chain o nei log ESP32 "
+            "per calcolare deviceToBlockLatencySeconds"
+        )
 
     return {
         "experiment": "batch-vs-single",
@@ -326,6 +342,35 @@ def get_calldata_bytes(input_data):
     if not isinstance(input_data, str) or not input_data.startswith("0x"):
         return 0
     return max((len(input_data) - 2) // 2, 0)
+
+
+def extract_measurement_latencies(receipt):
+    latencies = []
+
+    for log in receipt.get("logs") or []:
+        topics = log.get("topics") or []
+        if not topics or str(topics[0]).lower() != MEASUREMENT_RECORDED_TOPIC:
+            continue
+
+        data = log.get("data")
+        if not isinstance(data, str) or not data.startswith("0x"):
+            continue
+
+        encoded = data[2:]
+        if len(encoded) < 5 * 64:
+            continue
+
+        device_timestamp = int(encoded[64:128], 16)
+        blockchain_timestamp = int(encoded[128:192], 16)
+        latencies.append(blockchain_timestamp - device_timestamp)
+
+    return latencies
+
+
+def format_decimal(value):
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{value:.10f}".rstrip("0").rstrip(".")
 
 
 def format_ether(wei):
